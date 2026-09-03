@@ -1,4 +1,4 @@
-# VIMAK CRM V6.2 — CLIENTES PRO
+# VIMAK CRM V6.2.1 — CLIENTES PRO FIX
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -18,3 +18,9 @@ Atualização construída sobre a V6.1 funcional.
 ## Deploy
 Substitua os arquivos do projeto no GitHub/Netlify pelos arquivos desta pasta.
 O cache do Service Worker foi alterado para `vimak-crm-v6-2-clientes-pro`.
+
+
+## Correção V6.2.1
+- Project URL Supabase corrigida para o projeto real confirmado no Dashboard/DNS.
+- Service Worker corrigido para nunca interceptar autenticação/API externa.
+- Cache PWA atualizado para evitar reutilização da V6.1/V6.2.
