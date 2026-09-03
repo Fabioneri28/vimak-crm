@@ -1,4 +1,4 @@
-# VIMAK CRM V6.2.1 — CLIENTES PRO FIX
+# VIMAK CRM V6.3 — FORNECEDORES PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -24,3 +24,18 @@ O cache do Service Worker foi alterado para `vimak-crm-v6-2-clientes-pro`.
 - Project URL Supabase corrigida para o projeto real confirmado no Dashboard/DNS.
 - Service Worker corrigido para nunca interceptar autenticação/API externa.
 - Cache PWA atualizado para evitar reutilização da V6.1/V6.2.
+
+
+## V6.3 — Fornecedores PRO
+- Cadastro real de fornecedores no Supabase.
+- Categorias de fornecimento.
+- CNPJ/CPF, responsável, telefone/WhatsApp, e-mail e website.
+- Status ativo/inativo.
+- Observações comerciais.
+- KPIs de fornecedores.
+- Busca inteligente.
+- Visualização detalhada.
+- Edição e exclusão com confirmação.
+- Atalhos para WhatsApp e website.
+- Mantém Clientes PRO, autenticação, RLS, Project URL correto e Service Worker seguro.
+- Sem alteração destrutiva no schema atual.

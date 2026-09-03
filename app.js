@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],suppliers:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -148,12 +148,16 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p]=await Promise.all([
+  const [c,l,p,s]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
-    sb.from("proposals").select("*").order("created_at",{ascending:false})
+    sb.from("proposals").select("*").order("created_at",{ascending:false}),
+    sb.from("suppliers").select("*").order("created_at",{ascending:false})
   ]);
-  cache.clients=c.data||[];cache.leads=l.data||[];cache.proposals=p.data||[];
+  cache.clients=c.data||[];
+  cache.leads=l.data||[];
+  cache.proposals=p.data||[];
+  cache.suppliers=s.data||[];
 }
 async function render(){
   if(!session||!profile||!company)return;
@@ -261,7 +265,98 @@ function empresa(){return shell("Configurações da Empresa","Dados reais do ten
 function usuarios(){return shell("Usuários","Perfis vinculados à empresa","",`<div class="notice">Nesta V6, criação de usuários adicionais será feita pela camada administrativa segura. Seu usuário atual: <b>${esc(profile.email||session.user.email)}</b> • ${esc(profile.role)}</div>`)}
 function auditoria(){return simpleTable("Auditoria","Eventos do ambiente","",["Data","Usuário","Ação"],[])}
 function planos(){return shell("Assinatura / Planos","Planos comerciais do SaaS","",`<div class="grid g3">${["Essencial","Profissional","Premium"].map(x=>`<div class="card pad"><h2 class="goldtxt">${x}</h2><button class="btn">Selecionar</button></div>`).join("")}</div>`)}
-function fornecedores(){return simpleTable("Fornecedores","Módulo conectado na próxima expansão","",["Nome","Documento","Contato","Ações"],[])}
+function supplierById(id){return cache.suppliers.find(x=>x.id===id)}
+function supplierPhone(v){return String(v||"").replace(/\D/g,"")}
+function supplierForm(x={}){
+ return `<div class="form-grid">
+ <div class="field full"><label>Nome / Razão Social *</label><input id="sn" value="${esc(x.name||"")}"></div>
+ <div class="field"><label>Tipo</label><select id="st"><option ${x.type==="MDF / Chapas"?"selected":""}>MDF / Chapas</option><option ${x.type==="Ferragens"?"selected":""}>Ferragens</option><option ${x.type==="Vidros / Espelhos"?"selected":""}>Vidros / Espelhos</option><option ${x.type==="Pedras / Mármores"?"selected":""}>Pedras / Mármores</option><option ${x.type==="Tintas / Laca"?"selected":""}>Tintas / Laca</option><option ${x.type==="Acessórios"?"selected":""}>Acessórios</option><option ${x.type==="Serviços"?"selected":""}>Serviços</option><option ${x.type==="Logística"?"selected":""}>Logística</option><option ${x.type==="Outros"?"selected":""}>Outros</option></select></div>
+ <div class="field"><label>CNPJ / CPF</label><input id="sd" value="${esc(x.document||"")}"></div>
+ <div class="field"><label>Responsável / Contato</label><input id="sc" value="${esc(x.contact_name||"")}"></div>
+ <div class="field"><label>Telefone / WhatsApp</label><input id="sp" value="${esc(x.phone||"")}"></div>
+ <div class="field full"><label>E-mail</label><input id="se" type="email" value="${esc(x.email||"")}"></div>
+ <div class="field full"><label>Website</label><input id="sw" placeholder="https://..." value="${esc(x.website||"")}"></div>
+ <div class="field"><label>Status</label><select id="sa"><option value="true" ${x.active!==false?"selected":""}>Ativo</option><option value="false" ${x.active===false?"selected":""}>Inativo</option></select></div>
+ <div class="field full"><label>Observações comerciais</label><textarea id="snotes" rows="5" placeholder="Condições, prazo médio, marcas fornecidas, observações de atendimento...">${esc(x.notes||"")}</textarea></div>
+ </div>`;
+}
+function fornecedores(){
+ const ativos=cache.suppliers.filter(x=>x.active!==false).length;
+ const tipos=new Set(cache.suppliers.map(x=>x.type).filter(Boolean)).size;
+ const novos=cache.suppliers.filter(x=>{const d=new Date(x.created_at);const n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear()}).length;
+ const rows=cache.suppliers.map(x=>`<tr>
+ <td><button class="link-client" onclick="viewSupplier('${x.id}')"><b>${esc(x.name)}</b></button><small>${esc(x.contact_name||"Sem contato responsável")}</small></td>
+ <td>${esc(x.type||"—")}</td>
+ <td>${esc(x.document||"—")}</td>
+ <td>${esc(x.phone||"—")}</td>
+ <td>${esc(x.email||"—")}</td>
+ <td><span class="badge ${x.active!==false?"ok":""}">${x.active!==false?"Ativo":"Inativo"}</span></td>
+ <td><div class="row-actions"><button class="btn sm" onclick="viewSupplier('${x.id}')">Ver</button><button class="btn sm" onclick="editSupplier('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteSupplier('${x.id}')">Excluir</button></div></td>
+ </tr>`);
+ return shell("Fornecedores","Base de fornecimento e relacionamento comercial da "+company.name,
+ `<button class="btn gold" onclick="addSupplier()">+ Novo Fornecedor</button>`,
+ `<div class="grid g4 client-kpis">
+   <div class="card kpi"><label>Total de fornecedores</label><strong>${cache.suppliers.length}</strong></div>
+   <div class="card kpi"><label>Ativos</label><strong class="goldtxt">${ativos}</strong></div>
+   <div class="card kpi"><label>Novos no mês</label><strong>${novos}</strong></div>
+   <div class="card kpi"><label>Categorias</label><strong>${tipos}</strong></div>
+ </div>
+ <div class="filters"><div class="field"><label>Buscar fornecedor</label><input placeholder="Nome, CNPJ, responsável, telefone, categoria..." oninput="filterTable(this.value)"></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Fornecedor</th><th>Categoria</th><th>Documento</th><th>Contato</th><th>E-mail</th><th>Status</th><th>Ações</th></tr></thead><tbody id="rows">${rows.length?rows.join(""):`<tr><td class="empty" colspan="7">Nenhum fornecedor cadastrado. Clique em + Novo Fornecedor para começar.</td></tr>`}</tbody></table></div></div>`);
+}
+function addSupplier(){openModal("Novo Fornecedor",supplierForm(),`saveSupplier()`)}
+async function saveSupplier(id=null){
+ const name=document.getElementById("sn").value.trim();
+ if(!name)return toast("Informe o nome do fornecedor");
+ const payload={
+   company_id:profile.company_id,
+   name,
+   type:st.value,
+   document:sd.value.trim(),
+   contact_name:sc.value.trim(),
+   phone:sp.value.trim(),
+   email:se.value.trim(),
+   website:sw.value.trim(),
+   notes:snotes.value.trim(),
+   active:sa.value==="true"
+ };
+ let error;
+ if(id){({error}=await sb.from("suppliers").update(payload).eq("id",id));}
+ else {({error}=await sb.from("suppliers").insert(payload));}
+ if(error)return toast("Erro: "+error.message);
+ closeModal();toast(id?"Fornecedor atualizado":"Fornecedor salvo na nuvem");render();
+}
+function editSupplier(id){
+ const x=supplierById(id); if(!x)return toast("Fornecedor não encontrado");
+ openModal("Editar Fornecedor",supplierForm(x),`saveSupplier('${id}')`);
+}
+function viewSupplier(id){
+ const x=supplierById(id); if(!x)return toast("Fornecedor não encontrado");
+ const phone=supplierPhone(x.phone);
+ const site=x.website&&/^https?:\/\//i.test(x.website)?x.website:(x.website?`https://${x.website}`:"");
+ openModal(esc(x.name),`<div class="client-detail">
+ <div class="client-hero"><div class="client-avatar">${esc((x.name||"F").charAt(0).toUpperCase())}</div><div><span class="badge ${x.active!==false?"ok":""}">${x.active!==false?"Ativo":"Inativo"}</span><p>${esc(x.type||"Fornecedor")} ${x.document?"• "+esc(x.document):""}</p></div></div>
+ <div class="detail-grid">
+   <div><label>Responsável</label><b>${esc(x.contact_name||"—")}</b></div>
+   <div><label>Telefone</label><b>${esc(x.phone||"—")}</b></div>
+   <div><label>E-mail</label><b>${esc(x.email||"—")}</b></div>
+   <div><label>Website</label><b>${esc(x.website||"—")}</b></div>
+ </div>
+ <div class="detail-notes"><label>Observações comerciais</label><p>${esc(x.notes||"Nenhuma observação cadastrada.")}</p></div>
+ <div class="client-quick">
+   ${phone?`<a class="btn gold" target="_blank" rel="noopener" href="https://wa.me/55${phone.replace(/^55/,"")}">Abrir WhatsApp</a>`:""}
+   ${site?`<a class="btn" target="_blank" rel="noopener" href="${esc(site)}">Abrir Website</a>`:""}
+   <button class="btn" onclick="closeModal();editSupplier('${id}')">Editar cadastro</button>
+ </div>
+ </div>`,"");
+}
+async function deleteSupplier(id){
+ const x=supplierById(id); if(!x)return;
+ if(!confirm(`Excluir o fornecedor "${x.name}"? Compras e insumos vinculados podem impedir a exclusão.`))return;
+ const {error}=await sb.from("suppliers").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ toast("Fornecedor excluído");render();
+}
 function parceiros(){return simpleTable("Parceiros","Módulo conectado na próxima expansão","",["Nome","Tipo","Contato","Ações"],[])}
 function posvenda(){return simpleTable("Pós-venda / Garantia","Módulo conectado na próxima expansão","",["Cliente","Serviço","Status","Ações"],[])}
 function insumos(){return simpleTable("Insumos","Módulo conectado na próxima expansão","",["Nome","Tipo","Estoque","Ações"],[])}
