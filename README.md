@@ -1,4 +1,4 @@
-# VIMAK CRM V6.4 — PARCEIROS PRO
+# VIMAK CRM V6.5 — PÓS-VENDA / GARANTIA PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -55,3 +55,16 @@ O cache do Service Worker foi alterado para `vimak-crm-v6-2-clientes-pro`.
 - Edição e exclusão com confirmação.
 - Atalho para WhatsApp.
 - Preserva Clientes PRO, Fornecedores PRO, Auth, RLS, Project URL correto e Service Worker seguro.
+
+
+## V6.5 — Pós-venda / Garantia PRO
+- Chamados reais gravados em `after_sales_tickets`.
+- Vinculação com cliente e proposta.
+- Tipos de atendimento: garantia, assistência técnica, ajuste, manutenção, reparo, vistoria e orientação.
+- Prioridades e status operacionais.
+- Custo por chamado.
+- Data de abertura e encerramento.
+- KPIs de abertos, urgentes, concluídos e custo acumulado.
+- Busca, visualização detalhada, edição e exclusão.
+- Mantém Clientes PRO, Fornecedores PRO, Parceiros PRO, Auth, RLS, URL correta e Service Worker seguro.
+- Sem alteração destrutiva no schema atual.

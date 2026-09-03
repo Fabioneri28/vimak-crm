@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],suppliers:[],partners:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],suppliers:[],partners:[],afterSales:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -148,18 +148,20 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p,s,pa]=await Promise.all([
+  const [c,l,p,s,pa,as]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
     sb.from("proposals").select("*").order("created_at",{ascending:false}),
     sb.from("suppliers").select("*").order("created_at",{ascending:false}),
-    sb.from("partners").select("*").order("created_at",{ascending:false})
+    sb.from("partners").select("*").order("created_at",{ascending:false}),
+    sb.from("after_sales_tickets").select("*").order("opened_at",{ascending:false})
   ]);
   cache.clients=c.data||[];
   cache.leads=l.data||[];
   cache.proposals=p.data||[];
   cache.suppliers=s.data||[];
   cache.partners=pa.data||[];
+  cache.afterSales=as.data||[];
 }
 async function render(){
   if(!session||!profile||!company)return;
@@ -458,7 +460,116 @@ async function deletePartner(id){
  if(error)return toast("Erro: "+error.message);
  toast("Parceiro excluído");render();
 }
-function posvenda(){return simpleTable("Pós-venda / Garantia","Módulo conectado na próxima expansão","",["Cliente","Serviço","Status","Ações"],[])}
+function afterSaleById(id){return cache.afterSales.find(x=>x.id===id)}
+function afterSaleClient(id){return cache.clients.find(x=>x.id===id)}
+function afterSaleProposal(id){return cache.proposals.find(x=>x.id===id)}
+function afterSaleStatusClass(status){return status==="Concluído"?"ok":status==="Em atendimento"?"":"warn"}
+function afterSaleForm(x={}){
+ const clientOptions=cache.clients.map(c=>`<option value="${c.id}" ${x.client_id===c.id?"selected":""}>${esc(c.name)}</option>`).join("");
+ const proposalOptions=cache.proposals.map(p=>`<option value="${p.id}" ${x.proposal_id===p.id?"selected":""}>${esc(p.number||"")} ${esc(p.title||"Proposta")}</option>`).join("");
+ return `<div class="form-grid">
+   <div class="field full"><label>Cliente *</label><select id="asc"><option value="">Selecione...</option>${clientOptions}</select></div>
+   <div class="field"><label>Tipo de atendimento</label><select id="ast">
+     ${["Garantia","Assistência técnica","Ajuste","Manutenção","Reparo","Vistoria","Orientação de uso","Outro"].map(v=>`<option ${x.service_type===v?"selected":""}>${v}</option>`).join("")}
+   </select></div>
+   <div class="field"><label>Prioridade</label><select id="asp">
+     ${["Baixa","Normal","Alta","Urgente"].map(v=>`<option ${x.priority===v?"selected":""}>${v}</option>`).join("")}
+   </select></div>
+   <div class="field"><label>Status</label><select id="ass">
+     ${["Aberto","Em atendimento","Aguardando cliente","Aguardando peça","Agendado","Concluído","Cancelado"].map(v=>`<option ${x.status===v?"selected":""}>${v}</option>`).join("")}
+   </select></div>
+   <div class="field"><label>Custo estimado / realizado</label><input id="asco" type="number" min="0" step="0.01" value="${Number(x.cost||0)}"></div>
+   <div class="field full"><label>Proposta vinculada</label><select id="aspr"><option value="">Sem proposta vinculada</option>${proposalOptions}</select></div>
+   <div class="field full"><label>Descrição do chamado *</label><textarea id="asd" rows="6" placeholder="Descreva o problema, ambiente, peça, ocorrência e providências...">${esc(x.description||"")}</textarea></div>
+ </div>`;
+}
+function posvenda(){
+ const abertos=cache.afterSales.filter(x=>["Aberto","Em atendimento","Aguardando cliente","Aguardando peça","Agendado"].includes(x.status)).length;
+ const urgentes=cache.afterSales.filter(x=>x.priority==="Urgente"&&x.status!=="Concluído"&&x.status!=="Cancelado").length;
+ const concluidos=cache.afterSales.filter(x=>x.status==="Concluído").length;
+ const custo=cache.afterSales.reduce((a,x)=>a+Number(x.cost||0),0);
+ const rows=cache.afterSales.map(x=>{
+   const c=afterSaleClient(x.client_id);
+   const opened=x.opened_at?new Date(x.opened_at).toLocaleDateString("pt-BR"):"—";
+   return `<tr>
+     <td><button class="link-client" onclick="viewAfterSale('${x.id}')"><b>${esc(c?.name||"Cliente não vinculado")}</b></button><small>${opened}</small></td>
+     <td>${esc(x.service_type||"—")}</td>
+     <td>${esc(x.description||"")}</td>
+     <td><span class="badge ${afterSaleStatusClass(x.status)}">${esc(x.status||"Aberto")}</span></td>
+     <td><span class="badge">${esc(x.priority||"Normal")}</span></td>
+     <td>${money(x.cost)}</td>
+     <td><div class="row-actions"><button class="btn sm" onclick="viewAfterSale('${x.id}')">Ver</button><button class="btn sm" onclick="editAfterSale('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteAfterSale('${x.id}')">Excluir</button></div></td>
+   </tr>`;
+ }).join("");
+ return shell("Pós-venda / Garantia","Central de assistência, garantia e relacionamento após a entrega",
+ `<button class="btn gold" onclick="addAfterSale()">+ Novo Chamado</button>`,
+ `<div class="grid g4 client-kpis">
+   <div class="card kpi"><label>Chamados em aberto</label><strong class="goldtxt">${abertos}</strong></div>
+   <div class="card kpi"><label>Urgentes</label><strong>${urgentes}</strong></div>
+   <div class="card kpi"><label>Concluídos</label><strong>${concluidos}</strong></div>
+   <div class="card kpi"><label>Custo acumulado</label><strong>${money(custo)}</strong></div>
+ </div>
+ <div class="filters"><div class="field"><label>Buscar chamado</label><input placeholder="Cliente, serviço, status, descrição..." oninput="filterTable(this.value)"></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Cliente</th><th>Serviço</th><th>Descrição</th><th>Status</th><th>Prioridade</th><th>Custo</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="7">Nenhum chamado de pós-venda cadastrado.</td></tr>`}</tbody></table></div></div>`);
+}
+function addAfterSale(){
+ if(!cache.clients.length)return toast("Cadastre um cliente antes de abrir um chamado");
+ openModal("Novo Chamado • Pós-venda / Garantia",afterSaleForm(),`saveAfterSale()`);
+}
+async function saveAfterSale(id=null){
+ const clientId=document.getElementById("asc").value;
+ const description=document.getElementById("asd").value.trim();
+ if(!clientId)return toast("Selecione o cliente");
+ if(!description)return toast("Descreva o chamado");
+ const status=ass.value;
+ const payload={
+   company_id:profile.company_id,
+   client_id:clientId,
+   proposal_id:aspr.value||null,
+   service_type:ast.value,
+   description,
+   status,
+   priority:asp.value,
+   cost:Number(asco.value||0),
+   closed_at:status==="Concluído"?new Date().toISOString():null
+ };
+ let error;
+ if(id){({error}=await sb.from("after_sales_tickets").update(payload).eq("id",id));}
+ else {({error}=await sb.from("after_sales_tickets").insert(payload));}
+ if(error)return toast("Erro: "+error.message);
+ closeModal();toast(id?"Chamado atualizado":"Chamado aberto na nuvem");render();
+}
+function editAfterSale(id){
+ const x=afterSaleById(id); if(!x)return toast("Chamado não encontrado");
+ openModal("Editar Chamado",afterSaleForm(x),`saveAfterSale('${id}')`);
+}
+function viewAfterSale(id){
+ const x=afterSaleById(id); if(!x)return toast("Chamado não encontrado");
+ const c=afterSaleClient(x.client_id);
+ const p=afterSaleProposal(x.proposal_id);
+ const opened=x.opened_at?new Date(x.opened_at).toLocaleString("pt-BR"):"—";
+ const closed=x.closed_at?new Date(x.closed_at).toLocaleString("pt-BR"):"—";
+ openModal(`Chamado • ${esc(c?.name||"Cliente")}`,`<div class="client-detail">
+   <div class="client-hero"><div class="client-avatar">✓</div><div><span class="badge ${afterSaleStatusClass(x.status)}">${esc(x.status||"Aberto")}</span><p>${esc(x.service_type||"Pós-venda")} • Prioridade ${esc(x.priority||"Normal")}</p></div></div>
+   <div class="detail-grid">
+     <div><label>Cliente</label><b>${esc(c?.name||"—")}</b></div>
+     <div><label>Proposta</label><b>${esc(p?.number||p?.title||"—")}</b></div>
+     <div><label>Aberto em</label><b>${opened}</b></div>
+     <div><label>Concluído em</label><b>${closed}</b></div>
+     <div><label>Custo</label><b class="goldtxt">${money(x.cost)}</b></div>
+     <div><label>Prioridade</label><b>${esc(x.priority||"Normal")}</b></div>
+   </div>
+   <div class="detail-notes"><label>Descrição do chamado</label><p>${esc(x.description||"—")}</p></div>
+   <div class="client-quick"><button class="btn gold" onclick="closeModal();editAfterSale('${id}')">Atualizar chamado</button>${c?`<button class="btn" onclick="closeModal();viewClient('${c.id}')">Ver cliente</button>`:""}</div>
+ </div>`,"");
+}
+async function deleteAfterSale(id){
+ const x=afterSaleById(id); if(!x)return;
+ if(!confirm("Excluir este chamado de pós-venda? Esta ação não pode ser desfeita."))return;
+ const {error}=await sb.from("after_sales_tickets").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ toast("Chamado excluído");render();
+}
 function insumos(){return simpleTable("Insumos","Módulo conectado na próxima expansão","",["Nome","Tipo","Estoque","Ações"],[])}
 function modelos(){return simpleTable("Modelos de Proposta","Módulo conectado na próxima expansão","",["Nome","Ambientes","Ações"],[])}
 function medicoes(){return simpleTable("Medições Técnicas","Módulo conectado na próxima expansão","",["Cliente","Ambientes","Data","Ações"],[])}
