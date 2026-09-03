@@ -1,10 +1,10 @@
 {
-  "name": "VIMAK CRM V5 Cloud Ready",
+  "name": "VIMAK CRM V6 Supabase Real",
   "short_name": "VIMAK CRM",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#090909",
   "theme_color": "#090909",
-  "description": "CRM SaaS VIMAK preparado para GitHub, Netlify e Supabase"
+  "description": "VIMAK CRM conectado ao Supabase Auth e PostgreSQL"
 }
