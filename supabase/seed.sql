@@ -1,0 +1,8 @@
+-- Seeds opcionais. Não crie senhas aqui.
+-- Crie usuários pelo Supabase Auth e associe-os ao tenant por fluxo seguro do aplicativo.
+-- Exemplo (rodar em sessão autenticada):
+-- insert into public.cost_centers(company_id,name,type) values
+-- (public.current_company_id(),'Produção','Operacional'),
+-- (public.current_company_id(),'Montagem','Operacional'),
+-- (public.current_company_id(),'Marketing','Administrativo'),
+-- (public.current_company_id(),'Comercial','Administrativo');
