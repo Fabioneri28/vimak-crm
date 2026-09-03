@@ -1,6 +1,6 @@
 window.VIMAK_CONFIG = {
   backend: "supabase",
-  supabaseUrl: "https://kpsoigxkpwfcdgdvwmngd.supabase.co",
+  supabaseUrl: "https://kpsoigxkpwfcddgvwmgd.supabase.co",
   supabasePublishableKey: "sb_publishable_gbTa-v_gAn37JhzRek1B_A_8_a1BxYn",
-  appVersion: "6.0.0"
+  appVersion: "6.2.0"
 };
