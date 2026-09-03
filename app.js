@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],suppliers:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],suppliers:[],partners:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -148,16 +148,18 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p,s]=await Promise.all([
+  const [c,l,p,s,pa]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
     sb.from("proposals").select("*").order("created_at",{ascending:false}),
-    sb.from("suppliers").select("*").order("created_at",{ascending:false})
+    sb.from("suppliers").select("*").order("created_at",{ascending:false}),
+    sb.from("partners").select("*").order("created_at",{ascending:false})
   ]);
   cache.clients=c.data||[];
   cache.leads=l.data||[];
   cache.proposals=p.data||[];
   cache.suppliers=s.data||[];
+  cache.partners=pa.data||[];
 }
 async function render(){
   if(!session||!profile||!company)return;
@@ -357,7 +359,105 @@ async function deleteSupplier(id){
  if(error)return toast("Erro: "+error.message);
  toast("Fornecedor excluído");render();
 }
-function parceiros(){return simpleTable("Parceiros","Módulo conectado na próxima expansão","",["Nome","Tipo","Contato","Ações"],[])}
+function partnerById(id){return cache.partners.find(x=>x.id===id)}
+function partnerPhone(v){return String(v||"").replace(/\D/g,"")}
+function partnerRate(v){return Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%"}
+function partnerForm(x={}){
+ return `<div class="form-grid">
+ <div class="field full"><label>Nome / Parceiro *</label><input id="pan" value="${esc(x.name||"")}"></div>
+ <div class="field"><label>Tipo de parceiro</label><select id="pat">
+   <option ${x.type==="Arquiteto(a)"?"selected":""}>Arquiteto(a)</option>
+   <option ${x.type==="Designer de Interiores"?"selected":""}>Designer de Interiores</option>
+   <option ${x.type==="Corretor(a) de Imóveis"?"selected":""}>Corretor(a) de Imóveis</option>
+   <option ${x.type==="Construtora / Incorporadora"?"selected":""}>Construtora / Incorporadora</option>
+   <option ${x.type==="Engenheiro(a)"?"selected":""}>Engenheiro(a)</option>
+   <option ${x.type==="Indicador / Afiliado"?"selected":""}>Indicador / Afiliado</option>
+   <option ${x.type==="Loja / Showroom"?"selected":""}>Loja / Showroom</option>
+   <option ${x.type==="Outro"?"selected":""}>Outro</option>
+ </select></div>
+ <div class="field"><label>Comissão (%)</label><input id="par" type="number" min="0" step="0.01" value="${Number(x.commission_rate||0)}"></div>
+ <div class="field"><label>Telefone / WhatsApp</label><input id="pap" value="${esc(x.phone||"")}"></div>
+ <div class="field"><label>E-mail</label><input id="pae" type="email" value="${esc(x.email||"")}"></div>
+ <div class="field full"><label>Chave PIX</label><input id="papix" value="${esc(x.pix_key||"")}"></div>
+ <div class="field"><label>Status</label><select id="paa"><option value="true" ${x.active!==false?"selected":""}>Ativo</option><option value="false" ${x.active===false?"selected":""}>Inativo</option></select></div>
+ <div class="field full"><label>Observações</label><textarea id="panotes" rows="5" placeholder="Regras de comissão, região de atuação, perfil dos clientes, acordos comerciais...">${esc(x.notes||"")}</textarea></div>
+ </div>`;
+}
+function parceiros(){
+ const ativos=cache.partners.filter(x=>x.active!==false).length;
+ const tipos=new Set(cache.partners.map(x=>x.type).filter(Boolean)).size;
+ const media=cache.partners.length?cache.partners.reduce((a,x)=>a+Number(x.commission_rate||0),0)/cache.partners.length:0;
+ const novos=cache.partners.filter(x=>{const d=new Date(x.created_at);const n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear()}).length;
+ const rows=cache.partners.map(x=>`<tr>
+   <td><button class="link-client" onclick="viewPartner('${x.id}')"><b>${esc(x.name)}</b></button><small>${esc(x.type||"Parceiro")}</small></td>
+   <td>${esc(x.phone||"—")}</td>
+   <td>${esc(x.email||"—")}</td>
+   <td><span class="goldtxt"><b>${partnerRate(x.commission_rate)}</b></span></td>
+   <td>${esc(x.pix_key||"—")}</td>
+   <td><span class="badge ${x.active!==false?"ok":""}">${x.active!==false?"Ativo":"Inativo"}</span></td>
+   <td><div class="row-actions"><button class="btn sm" onclick="viewPartner('${x.id}')">Ver</button><button class="btn sm" onclick="editPartner('${x.id}')">Editar</button><button class="btn sm danger" onclick="deletePartner('${x.id}')">Excluir</button></div></td>
+ </tr>`);
+ return shell("Parceiros","Rede estratégica de indicação e relacionamento da "+company.name,
+ `<button class="btn gold" onclick="addPartner()">+ Novo Parceiro</button>`,
+ `<div class="grid g4 client-kpis">
+   <div class="card kpi"><label>Total de parceiros</label><strong>${cache.partners.length}</strong></div>
+   <div class="card kpi"><label>Ativos</label><strong class="goldtxt">${ativos}</strong></div>
+   <div class="card kpi"><label>Novos no mês</label><strong>${novos}</strong></div>
+   <div class="card kpi"><label>Comissão média</label><strong>${partnerRate(media)}</strong></div>
+ </div>
+ <div class="filters"><div class="field"><label>Buscar parceiro</label><input placeholder="Nome, tipo, telefone, e-mail, PIX..." oninput="filterTable(this.value)"></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Parceiro</th><th>Contato</th><th>E-mail</th><th>Comissão</th><th>PIX</th><th>Status</th><th>Ações</th></tr></thead><tbody id="rows">${rows.length?rows.join(""):`<tr><td class="empty" colspan="7">Nenhum parceiro cadastrado. Clique em + Novo Parceiro para começar.</td></tr>`}</tbody></table></div></div>`);
+}
+function addPartner(){openModal("Novo Parceiro",partnerForm(),`savePartner()`)}
+async function savePartner(id=null){
+ const name=document.getElementById("pan").value.trim();
+ if(!name)return toast("Informe o nome do parceiro");
+ const payload={
+   company_id:profile.company_id,
+   name,
+   type:pat.value,
+   phone:pap.value.trim(),
+   email:pae.value.trim(),
+   commission_rate:Number(par.value||0),
+   pix_key:papix.value.trim(),
+   notes:panotes.value.trim(),
+   active:paa.value==="true"
+ };
+ let error;
+ if(id){({error}=await sb.from("partners").update(payload).eq("id",id));}
+ else {({error}=await sb.from("partners").insert(payload));}
+ if(error)return toast("Erro: "+error.message);
+ closeModal();toast(id?"Parceiro atualizado":"Parceiro salvo na nuvem");render();
+}
+function editPartner(id){
+ const x=partnerById(id); if(!x)return toast("Parceiro não encontrado");
+ openModal("Editar Parceiro",partnerForm(x),`savePartner('${id}')`);
+}
+function viewPartner(id){
+ const x=partnerById(id); if(!x)return toast("Parceiro não encontrado");
+ const phone=partnerPhone(x.phone);
+ openModal(esc(x.name),`<div class="client-detail">
+   <div class="client-hero"><div class="client-avatar">${esc((x.name||"P").charAt(0).toUpperCase())}</div><div><span class="badge ${x.active!==false?"ok":""}">${x.active!==false?"Ativo":"Inativo"}</span><p>${esc(x.type||"Parceiro")}</p></div></div>
+   <div class="detail-grid">
+     <div><label>Telefone / WhatsApp</label><b>${esc(x.phone||"—")}</b></div>
+     <div><label>E-mail</label><b>${esc(x.email||"—")}</b></div>
+     <div><label>Comissão</label><b class="goldtxt">${partnerRate(x.commission_rate)}</b></div>
+     <div><label>Chave PIX</label><b>${esc(x.pix_key||"—")}</b></div>
+   </div>
+   <div class="detail-notes"><label>Observações</label><p>${esc(x.notes||"Nenhuma observação cadastrada.")}</p></div>
+   <div class="client-quick">
+     ${phone?`<a class="btn gold" target="_blank" rel="noopener" href="https://wa.me/55${phone.replace(/^55/,"")}">Abrir WhatsApp</a>`:""}
+     <button class="btn" onclick="closeModal();editPartner('${id}')">Editar cadastro</button>
+   </div>
+ </div>`,"");
+}
+async function deletePartner(id){
+ const x=partnerById(id); if(!x)return;
+ if(!confirm(`Excluir o parceiro "${x.name}"? Propostas vinculadas podem impedir a exclusão.`))return;
+ const {error}=await sb.from("partners").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ toast("Parceiro excluído");render();
+}
 function posvenda(){return simpleTable("Pós-venda / Garantia","Módulo conectado na próxima expansão","",["Cliente","Serviço","Status","Ações"],[])}
 function insumos(){return simpleTable("Insumos","Módulo conectado na próxima expansão","",["Nome","Tipo","Estoque","Ações"],[])}
 function modelos(){return simpleTable("Modelos de Proposta","Módulo conectado na próxima expansão","",["Nome","Ambientes","Ações"],[])}

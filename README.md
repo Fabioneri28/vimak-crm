@@ -1,4 +1,4 @@
-# VIMAK CRM V6.3 — FORNECEDORES PRO
+# VIMAK CRM V6.4 — PARCEIROS PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -39,3 +39,19 @@ O cache do Service Worker foi alterado para `vimak-crm-v6-2-clientes-pro`.
 - Atalhos para WhatsApp e website.
 - Mantém Clientes PRO, autenticação, RLS, Project URL correto e Service Worker seguro.
 - Sem alteração destrutiva no schema atual.
+
+
+## V6.4 — Parceiros PRO
+- Cadastro real de parceiros no Supabase.
+- Tipos: arquitetos, designers, corretores, construtoras, engenheiros, indicadores e outros.
+- Comissão percentual por parceiro.
+- Chave PIX.
+- Telefone/WhatsApp e e-mail.
+- Status ativo/inativo.
+- Observações comerciais.
+- KPIs de parceiros.
+- Busca.
+- Visualização detalhada.
+- Edição e exclusão com confirmação.
+- Atalho para WhatsApp.
+- Preserva Clientes PRO, Fornecedores PRO, Auth, RLS, Project URL correto e Service Worker seguro.
