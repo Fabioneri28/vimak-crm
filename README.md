@@ -1,4 +1,4 @@
-# VIMAK CRM V6.5 — PÓS-VENDA / GARANTIA PRO
+# VIMAK CRM V6.6 — INSUMOS PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -68,3 +68,14 @@ O cache do Service Worker foi alterado para `vimak-crm-v6-2-clientes-pro`.
 - Busca, visualização detalhada, edição e exclusão.
 - Mantém Clientes PRO, Fornecedores PRO, Parceiros PRO, Auth, RLS, URL correta e Service Worker seguro.
 - Sem alteração destrutiva no schema atual.
+
+
+## V6.6 — Insumos PRO
+- Cadastro cloud em `inputs`.
+- Tipos de materiais, ferragens, vidros, perfis, fitas, colas, laca, acessórios, iluminação, embalagens, serviços e outros.
+- Unidade, custo unitário, estoque atual, estoque mínimo e fornecedor principal.
+- SKU/código interno, marca, status e observações.
+- KPIs de total, ativos, estoque baixo e valor estimado em estoque.
+- Alertas automáticos de estoque mínimo.
+- Busca, visualização, edição e exclusão.
+- Mantém módulos PRO anteriores, Auth, RLS e Service Worker seguro.

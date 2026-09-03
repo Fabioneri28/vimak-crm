@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],suppliers:[],partners:[],afterSales:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -148,13 +148,14 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p,s,pa,as]=await Promise.all([
+  const [c,l,p,s,pa,as,i]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
     sb.from("proposals").select("*").order("created_at",{ascending:false}),
     sb.from("suppliers").select("*").order("created_at",{ascending:false}),
     sb.from("partners").select("*").order("created_at",{ascending:false}),
-    sb.from("after_sales_tickets").select("*").order("opened_at",{ascending:false})
+    sb.from("after_sales_tickets").select("*").order("opened_at",{ascending:false}),
+    sb.from("inputs").select("*").order("created_at",{ascending:false})
   ]);
   cache.clients=c.data||[];
   cache.leads=l.data||[];
@@ -162,6 +163,7 @@ async function refreshCore(){
   cache.suppliers=s.data||[];
   cache.partners=pa.data||[];
   cache.afterSales=as.data||[];
+  cache.inputs=i.data||[];
 }
 async function render(){
   if(!session||!profile||!company)return;
@@ -570,7 +572,107 @@ async function deleteAfterSale(id){
  if(error)return toast("Erro: "+error.message);
  toast("Chamado excluído");render();
 }
-function insumos(){return simpleTable("Insumos","Módulo conectado na próxima expansão","",["Nome","Tipo","Estoque","Ações"],[])}
+function inputById(id){return cache.inputs.find(x=>x.id===id)}
+function inputSupplier(id){return cache.suppliers.find(x=>x.id===id)}
+function inputStock(x){return Number(x.stock_qty??x.stock??0)}
+function inputMinStock(x){return Number(x.min_stock??x.minimum_stock??0)}
+function inputForm(x={}){
+ const supplierOptions=cache.suppliers.map(s=>`<option value="${s.id}" ${x.supplier_id===s.id?"selected":""}>${esc(s.name)}</option>`).join("");
+ const types=["MDF / MDP","Ferragem","Vidro / Espelho","Perfil / Alumínio","Fita de Borda","Cola / Adesivo","Laca / Pintura","Acessório","Iluminação","Embalagem","Serviço Terceirizado","Outro"];
+ const units=["un","m","m²","m³","kg","g","L","ml","chapa","par","kit","caixa"];
+ return `<div class="form-grid">
+   <div class="field full"><label>Nome do insumo *</label><input id="inn" value="${esc(x.name||"")}" placeholder="Ex.: MDF Carvalho 18mm"></div>
+   <div class="field"><label>Tipo / Categoria</label><select id="int">${types.map(v=>`<option ${x.type===v?"selected":""}>${v}</option>`).join("")}</select></div>
+   <div class="field"><label>Unidade</label><select id="inu">${units.map(v=>`<option ${x.unit===v?"selected":""}>${v}</option>`).join("")}</select></div>
+   <div class="field"><label>Custo unitário (R$)</label><input id="inc" type="number" min="0" step="0.01" value="${Number(x.unit_cost||0)}"></div>
+   <div class="field"><label>Estoque atual</label><input id="ins" type="number" min="0" step="0.01" value="${inputStock(x)}"></div>
+   <div class="field"><label>Estoque mínimo</label><input id="inm" type="number" min="0" step="0.01" value="${inputMinStock(x)}"></div>
+   <div class="field"><label>Fornecedor principal</label><select id="inf"><option value="">Sem fornecedor</option>${supplierOptions}</select></div>
+   <div class="field"><label>Código / SKU</label><input id="insk" value="${esc(x.sku||x.code||"")}" placeholder="Código interno"></div>
+   <div class="field"><label>Marca</label><input id="inb" value="${esc(x.brand||"")}" placeholder="Ex.: Duratex, Guararapes..."></div>
+   <div class="field"><label>Status</label><select id="ina"><option value="true" ${x.active!==false?"selected":""}>Ativo</option><option value="false" ${x.active===false?"selected":""}>Inativo</option></select></div>
+   <div class="field full"><label>Observações</label><textarea id="ino" rows="4" placeholder="Cor, espessura, acabamento, referência do fornecedor...">${esc(x.notes||"")}</textarea></div>
+ </div>`;
+}
+function insumos(){
+ const total=cache.inputs.length;
+ const ativos=cache.inputs.filter(x=>x.active!==false).length;
+ const baixos=cache.inputs.filter(x=>inputMinStock(x)>0&&inputStock(x)<=inputMinStock(x)).length;
+ const valor=cache.inputs.reduce((a,x)=>a+(inputStock(x)*Number(x.unit_cost||0)),0);
+ const rows=cache.inputs.map(x=>{
+   const low=inputMinStock(x)>0&&inputStock(x)<=inputMinStock(x);
+   const supplier=inputSupplier(x.supplier_id);
+   return `<tr>
+    <td><button class="link-client" onclick="viewInput('${x.id}')"><b>${esc(x.name||"—")}</b></button><small>${esc(x.brand||x.sku||"")}</small></td>
+    <td>${esc(x.type||"—")}</td>
+    <td>${esc(x.unit||"—")}</td>
+    <td>${money(x.unit_cost)}</td>
+    <td><span class="badge ${low?"warn":"ok"}">${inputStock(x)} ${esc(x.unit||"")}</span>${inputMinStock(x)>0?`<small>Mín.: ${inputMinStock(x)}</small>`:""}</td>
+    <td>${esc(supplier?.name||"—")}</td>
+    <td><span class="badge ${x.active===false?"warn":"ok"}">${x.active===false?"Inativo":"Ativo"}</span></td>
+    <td><div class="row-actions"><button class="btn sm" onclick="viewInput('${x.id}')">Ver</button><button class="btn sm" onclick="editInput('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteInput('${x.id}')">Excluir</button></div></td>
+   </tr>`;
+ }).join("");
+ return shell("Insumos","Base de materiais, ferragens, acessórios e serviços da VIMAK",
+ `<button class="btn gold" onclick="addInput()">+ Novo Insumo</button>`,
+ `<div class="grid g4 client-kpis">
+   <div class="card kpi"><label>Total de insumos</label><strong>${total}</strong></div>
+   <div class="card kpi"><label>Ativos</label><strong class="goldtxt">${ativos}</strong></div>
+   <div class="card kpi"><label>Estoque baixo</label><strong>${baixos}</strong></div>
+   <div class="card kpi"><label>Valor em estoque</label><strong>${money(valor)}</strong></div>
+ </div>
+ ${baixos?`<div class="cloudbar" style="margin-bottom:14px"><b>Atenção:</b> ${baixos} insumo(s) atingiram o estoque mínimo.</div>`:""}
+ <div class="filters"><div class="field"><label>Buscar insumo</label><input placeholder="Nome, tipo, marca, fornecedor..." oninput="filterTable(this.value)"></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Insumo</th><th>Tipo</th><th>Unidade</th><th>Custo Unit.</th><th>Estoque</th><th>Fornecedor</th><th>Status</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="8">Nenhum insumo cadastrado.</td></tr>`}</tbody></table></div></div>`);
+}
+function addInput(){openModal("Novo Insumo",inputForm(),`saveInput()`)}
+async function saveInput(id=null){
+ const name=inn.value.trim(); if(!name)return toast("Informe o nome do insumo");
+ const payload={
+   company_id:profile.company_id,
+   name,
+   type:int.value,
+   unit:inu.value,
+   unit_cost:Number(inc.value||0),
+   stock_qty:Number(ins.value||0),
+   min_stock:Number(inm.value||0),
+   supplier_id:inf.value||null,
+   sku:insk.value.trim()||null,
+   brand:inb.value.trim()||null,
+   active:ina.value==="true",
+   notes:ino.value.trim()||null
+ };
+ let error;
+ if(id){({error}=await sb.from("inputs").update(payload).eq("id",id));}
+ else {({error}=await sb.from("inputs").insert(payload));}
+ if(error)return toast("Erro: "+error.message);
+ closeModal();toast(id?"Insumo atualizado":"Insumo salvo na nuvem");render();
+}
+function editInput(id){const x=inputById(id);if(!x)return toast("Insumo não encontrado");openModal("Editar Insumo",inputForm(x),`saveInput('${id}')`)}
+function viewInput(id){
+ const x=inputById(id);if(!x)return toast("Insumo não encontrado");
+ const supplier=inputSupplier(x.supplier_id);
+ const low=inputMinStock(x)>0&&inputStock(x)<=inputMinStock(x);
+ openModal(esc(x.name||"Insumo"),`<div class="client-detail">
+  <div class="client-hero"><div class="client-avatar">I</div><div><span class="badge ${low?"warn":"ok"}">${low?"Estoque baixo":"Estoque OK"}</span><p>${esc(x.type||"Insumo")} • ${esc(x.brand||"Sem marca")}</p></div></div>
+  <div class="detail-grid">
+   <div><label>Código / SKU</label><b>${esc(x.sku||x.code||"—")}</b></div>
+   <div><label>Fornecedor</label><b>${esc(supplier?.name||"—")}</b></div>
+   <div><label>Unidade</label><b>${esc(x.unit||"—")}</b></div>
+   <div><label>Custo unitário</label><b class="goldtxt">${money(x.unit_cost)}</b></div>
+   <div><label>Estoque atual</label><b>${inputStock(x)} ${esc(x.unit||"")}</b></div>
+   <div><label>Estoque mínimo</label><b>${inputMinStock(x)} ${esc(x.unit||"")}</b></div>
+  </div>
+  <div class="detail-notes"><label>Observações</label><p>${esc(x.notes||"—")}</p></div>
+  <div class="client-quick"><button class="btn gold" onclick="closeModal();editInput('${id}')">Editar insumo</button></div>
+ </div>`,"");
+}
+async function deleteInput(id){
+ if(!confirm("Excluir este insumo? Esta ação não pode ser desfeita."))return;
+ const {error}=await sb.from("inputs").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ toast("Insumo excluído");render();
+}
 function modelos(){return simpleTable("Modelos de Proposta","Módulo conectado na próxima expansão","",["Nome","Ambientes","Ações"],[])}
 function medicoes(){return simpleTable("Medições Técnicas","Módulo conectado na próxima expansão","",["Cliente","Ambientes","Data","Ações"],[])}
 function compras(){return simpleTable("Compras","Módulo conectado na próxima expansão","",["Fornecedor","Valor","Status","Ações"],[])}

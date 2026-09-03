@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-5-pos-venda-pro';
+const CACHE = 'vimak-crm-v6-6-insumos-pro';
 
 const ASSETS = [
   './',
