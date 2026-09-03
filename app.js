@@ -31,28 +31,102 @@ function filterTable(q){q=q.toLowerCase();document.querySelectorAll("#rows tr").
 
 async function init(){
   const {data:{session:s}} = await sb.auth.getSession();
-  if(s){session=s; await loadIdentity(); showApp();} else showAuth();
+  if(s){
+    session=s;
+    const ok=await loadIdentity();
+    if(ok) showApp(); else showAuth();
+  } else showAuth();
+
   sb.auth.onAuthStateChange(async (_event,s2)=>{
     session=s2;
-    if(session){await loadIdentity();showApp()} else showAuth();
+    if(session){
+      const ok=await loadIdentity();
+      if(ok) showApp(); else showAuth();
+    } else showAuth();
   });
 }
 function showAuth(){authScreen.classList.remove("hidden");appShell.classList.add("hidden")}
 function showApp(){authScreen.classList.add("hidden");appShell.classList.remove("hidden");syncChrome();render()}
 async function login(e){
   e.preventDefault();
-  const {error}=await sb.auth.signInWithPassword({email:loginEmail.value.trim(),password:loginPassword.value});
-  if(error)return toast("Login inválido: "+error.message);
-  toast("Login realizado com sucesso");
+
+  const emailEl = document.getElementById("loginEmail");
+  const passEl = document.getElementById("loginPassword");
+  const form = document.getElementById("loginForm");
+  const button = form.querySelector('button[type="submit"]');
+  const status = document.getElementById("loginStatus");
+
+  const email = emailEl.value.trim();
+  const password = passEl.value;
+
+  if(!email || !password){
+    status.style.display = "grid";
+    status.innerHTML = "<b>Preencha e-mail e senha.</b>";
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Entrando...";
+  status.style.display = "grid";
+  status.innerHTML = "<span>Conectando ao Supabase...</span>";
+
+  try{
+    const {data,error}=await sb.auth.signInWithPassword({email,password});
+
+    if(error){
+      status.innerHTML = `<b>Não foi possível entrar</b><span>${esc(error.message)}</span>`;
+      return;
+    }
+
+    if(!data.session){
+      status.innerHTML = "<b>Login não concluído</b><span>O Supabase não retornou uma sessão válida.</span>";
+      return;
+    }
+
+    status.innerHTML = "<b>Login realizado.</b><span>Carregando sua empresa...</span>";
+    toast("Login realizado com sucesso");
+  }catch(err){
+    console.error(err);
+    status.innerHTML = `<b>Erro de conexão</b><span>${esc(err.message || "Falha inesperada")}</span>`;
+  }finally{
+    button.disabled = false;
+    button.textContent = "Entrar no VIMAK CRM";
+  }
 }
 async function logout(){await sb.auth.signOut();toast("Sessão encerrada")}
 async function loadIdentity(){
   const uid=session.user.id;
+
   let {data:p,error}=await sb.from("profiles").select("*").eq("id",uid).single();
-  if(error){console.error(error);toast("Perfil não encontrado no banco");return}
+  if(error || !p){
+    console.error(error);
+    profile=null; company=null;
+    await sb.auth.signOut();
+    const status=document.getElementById("loginStatus");
+    if(status){
+      status.style.display="grid";
+      status.innerHTML="<b>Perfil não encontrado</b><span>Seu login existe no Supabase Auth, mas ainda não está vinculado a uma empresa no CRM.</span>";
+    }
+    return false;
+  }
+
   profile=p;
-  let {data:c}=await sb.from("companies").select("*").eq("id",p.company_id).single();
+
+  let {data:c,error:companyError}=await sb.from("companies").select("*").eq("id",p.company_id).single();
+  if(companyError || !c){
+    console.error(companyError);
+    profile=null; company=null;
+    await sb.auth.signOut();
+    const status=document.getElementById("loginStatus");
+    if(status){
+      status.style.display="grid";
+      status.innerHTML="<b>Empresa não encontrada</b><span>O perfil existe, mas a empresa vinculada não foi carregada.</span>";
+    }
+    return false;
+  }
+
   company=c;
+  return true;
 }
 function can(route){
   if(!profile)return false;
