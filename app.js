@@ -180,13 +180,68 @@ async function saveLead(){
  if(error)return toast("Erro: "+error.message);
  closeModal();toast("Lead salvo na nuvem");render();
 }
-function clientes(){return simpleTable("Clientes","Clientes reais no PostgreSQL",`<button class="btn gold" onclick="addClient()">+ Novo Cliente</button>`,["Nome","Tipo","Documento","Telefone","E-mail","Status","Ações"],cache.clients.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.type||"")}</td><td>${esc(x.document||"")}</td><td>${esc(x.phone||"")}</td><td>${esc(x.email||"")}</td><td><span class="badge ok">${esc(x.status||"Ativo")}</span></td><td><button class="btn sm danger" onclick="deleteRow('clients','${x.id}')">Excluir</button></td></tr>`))}
-function addClient(){openModal("Novo Cliente",`<div class="form-grid"><div class="field"><label>Nome</label><input id="cn"></div><div class="field"><label>Tipo</label><select id="ct"><option>Pessoa Física</option><option>Pessoa Jurídica</option></select></div><div class="field"><label>CPF/CNPJ</label><input id="cd"></div><div class="field"><label>Telefone</label><input id="cp"></div><div class="field full"><label>E-mail</label><input id="ce"></div></div>`,`saveClient()`)}
-async function saveClient(){
- if(!cn.value.trim())return toast("Informe o nome");
- const {error}=await sb.from("clients").insert({company_id:profile.company_id,name:cn.value.trim(),type:ct.value,document:cd.value,phone:cp.value,email:ce.value,created_by:session.user.id});
+function clientById(id){return cache.clients.find(x=>x.id===id)}
+function clientWhatsApp(v){return String(v||"").replace(/\D/g,"")}
+function clientForm(x={}){
+ return `<div class="form-grid">
+ <div class="field full"><label>Nome / Razão Social *</label><input id="cn" value="${esc(x.name||"")}"></div>
+ <div class="field"><label>Tipo</label><select id="ct"><option ${x.type==="Pessoa Física"?"selected":""}>Pessoa Física</option><option ${x.type==="Pessoa Jurídica"?"selected":""}>Pessoa Jurídica</option></select></div>
+ <div class="field"><label>CPF / CNPJ</label><input id="cd" value="${esc(x.document||"")}"></div>
+ <div class="field"><label>Telefone</label><input id="cp" value="${esc(x.phone||"")}"></div>
+ <div class="field"><label>WhatsApp</label><input id="cw" value="${esc(x.whatsapp||"")}"></div>
+ <div class="field full"><label>E-mail</label><input id="ce" type="email" value="${esc(x.email||"")}"></div>
+ <div class="field"><label>Cidade</label><input id="cc" value="${esc(x.city||"")}"></div>
+ <div class="field"><label>Bairro</label><input id="cb" value="${esc(x.neighborhood||"")}"></div>
+ <div class="field"><label>Status</label><select id="cs"><option ${x.status==="Ativo"?"selected":""}>Ativo</option><option ${x.status==="Inativo"?"selected":""}>Inativo</option><option ${x.status==="Prospect"?"selected":""}>Prospect</option></select></div>
+ <div class="field full"><label>Observações</label><textarea id="cnotes" rows="4">${esc(x.notes||"")}</textarea></div>
+ </div>`;
+}
+function clientes(){
+ const ativos=cache.clients.filter(x=>(x.status||"Ativo")==="Ativo").length;
+ const cidades=new Set(cache.clients.map(x=>x.city).filter(Boolean)).size;
+ const novos=cache.clients.filter(x=>{const d=new Date(x.created_at);const n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear()}).length;
+ const rows=cache.clients.map(x=>`<tr>
+ <td><button class="link-client" onclick="viewClient('${x.id}')"><b>${esc(x.name)}</b></button><small>${esc(x.city||"")}${x.neighborhood?" • "+esc(x.neighborhood):""}</small></td>
+ <td>${esc(x.type||"")}</td><td>${esc(x.document||"")}</td>
+ <td>${esc(x.whatsapp||x.phone||"")}</td><td>${esc(x.email||"")}</td>
+ <td><span class="badge ${(x.status||"Ativo")==="Ativo"?"ok":""}">${esc(x.status||"Ativo")}</span></td>
+ <td><div class="row-actions"><button class="btn sm" onclick="viewClient('${x.id}')">Ver</button><button class="btn sm" onclick="editClient('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteClient('${x.id}')">Excluir</button></div></td></tr>`);
+ return shell("Clientes","Base comercial central da "+company.name,`<button class="btn gold" onclick="addClient()">+ Novo Cliente</button>`,
+ `<div class="grid g4 client-kpis"><div class="card kpi"><label>Total de clientes</label><strong>${cache.clients.length}</strong></div><div class="card kpi"><label>Ativos</label><strong class="goldtxt">${ativos}</strong></div><div class="card kpi"><label>Novos no mês</label><strong>${novos}</strong></div><div class="card kpi"><label>Cidades atendidas</label><strong>${cidades}</strong></div></div>
+ <div class="filters"><div class="field"><label>Buscar cliente</label><input placeholder="Nome, documento, cidade, telefone..." oninput="filterTable(this.value)"></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Cliente</th><th>Tipo</th><th>Documento</th><th>Contato</th><th>E-mail</th><th>Status</th><th>Ações</th></tr></thead><tbody id="rows">${rows.length?rows.join(""):`<tr><td class="empty" colspan="7">Nenhum cliente cadastrado. Clique em + Novo Cliente para começar.</td></tr>`}</tbody></table></div></div>`);
+}
+function addClient(){openModal("Novo Cliente",clientForm(),`saveClient()`)}
+async function saveClient(id=null){
+ const name=document.getElementById("cn").value.trim();
+ if(!name)return toast("Informe o nome do cliente");
+ const payload={company_id:profile.company_id,name,type:ct.value,document:cd.value.trim(),phone:cp.value.trim(),whatsapp:cw.value.trim(),email:ce.value.trim(),city:cc.value.trim(),neighborhood:cb.value.trim(),status:cs.value,notes:cnotes.value.trim()};
+ let error;
+ if(id){({error}=await sb.from("clients").update(payload).eq("id",id));}
+ else {payload.created_by=session.user.id;({error}=await sb.from("clients").insert(payload));}
  if(error)return toast("Erro: "+error.message);
- closeModal();toast("Cliente salvo na nuvem");render();
+ closeModal();toast(id?"Cliente atualizado":"Cliente salvo na nuvem");render();
+}
+function editClient(id){
+ const x=clientById(id); if(!x)return toast("Cliente não encontrado");
+ openModal("Editar Cliente",clientForm(x),`saveClient('${id}')`);
+}
+function viewClient(id){
+ const x=clientById(id); if(!x)return toast("Cliente não encontrado");
+ const wa=clientWhatsApp(x.whatsapp||x.phone);
+ openModal(esc(x.name),`<div class="client-detail">
+ <div class="client-hero"><div class="client-avatar">${esc((x.name||"C").charAt(0).toUpperCase())}</div><div><span class="badge ok">${esc(x.status||"Ativo")}</span><p>${esc(x.type||"Cliente")} ${x.document?"• "+esc(x.document):""}</p></div></div>
+ <div class="detail-grid"><div><label>WhatsApp</label><b>${esc(x.whatsapp||"—")}</b></div><div><label>Telefone</label><b>${esc(x.phone||"—")}</b></div><div><label>E-mail</label><b>${esc(x.email||"—")}</b></div><div><label>Localização</label><b>${esc([x.city,x.neighborhood].filter(Boolean).join(" • ")||"—")}</b></div></div>
+ <div class="detail-notes"><label>Observações</label><p>${esc(x.notes||"Nenhuma observação cadastrada.")}</p></div>
+ <div class="client-quick">${wa?`<a class="btn gold" target="_blank" rel="noopener" href="https://wa.me/55${wa.replace(/^55/,"")}">Abrir WhatsApp</a>`:""}<button class="btn" onclick="closeModal();editClient('${id}')">Editar cadastro</button></div>
+ </div>`,"");
+}
+async function deleteClient(id){
+ const x=clientById(id); if(!x)return;
+ if(!confirm(`Excluir o cliente "${x.name}"? Esta ação não pode ser desfeita.`))return;
+ const {error}=await sb.from("clients").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ toast("Cliente excluído");render();
 }
 function propostas(){return simpleTable("Propostas","Propostas reais no PostgreSQL",`<button class="btn gold" onclick="addProposal()">+ Nova Proposta</button>`,["Nº","Título","Status","Valor","Criado em","Ações"],cache.proposals.map(x=>`<tr><td>${x.number||""}</td><td>${esc(x.title)}</td><td><span class="badge">${esc(x.status)}</span></td><td>${money(x.total)}</td><td>${new Date(x.created_at).toLocaleDateString("pt-BR")}</td><td><button class="btn sm danger" onclick="deleteRow('proposals','${x.id}')">Excluir</button></td></tr>`))}
 function addProposal(){openModal("Nova Proposta",`<div class="form-grid"><div class="field"><label>Título</label><input id="pt"></div><div class="field"><label>Valor</label><input id="pv" type="number"></div><div class="field"><label>Status</label><select id="ps"><option>Orçado</option><option>Negociação</option><option>Aprovado</option><option>Perdido</option></select></div></div>`,`saveProposal()`)}

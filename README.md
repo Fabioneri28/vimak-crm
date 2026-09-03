@@ -1,28 +1,20 @@
-# VIMAK CRM V6 — Supabase Real
+# VIMAK CRM V6.2 — CLIENTES PRO
 
-Esta versão conecta o CRM ao projeto Supabase real.
+Atualização construída sobre a V6.1 funcional.
 
-## Backend
-- Supabase URL: https://kpsoigxkpwfcdgdvwmngd.supabase.co
-- Auth: Supabase Auth
-- Banco: PostgreSQL
-- Segurança: RLS multiempresa
-- Publishable key: configurada no `config.js`
-- Secret/service_role: NÃO incluídas
+## O que mudou
+- Mantém login real Supabase e arquitetura multiempresa.
+- Clientes com cadastro ampliado.
+- Edição de clientes.
+- Visualização detalhada.
+- Busca.
+- KPIs de clientes.
+- Atalho para WhatsApp.
+- Status Ativo/Inativo/Prospect.
+- Cidade, bairro, observações, telefone e WhatsApp separados.
+- Exclusão com confirmação.
+- Sem alteração destrutiva no schema atual.
 
-## O que já grava na nuvem
-- Login/logout real
-- Identidade do usuário e empresa
-- Clientes
-- Leads
-- Propostas
-
-## Estrutura de banco já criada para os demais módulos
-Fornecedores, parceiros, pós-venda, insumos, modelos, medições, compras, documentos,
-produção, planos de corte, sobras, integrações, montagem, financeiro e auditoria.
-
-## Primeiro acesso
-Use o e-mail criado em Supabase Authentication e a senha que você definiu lá.
-
-## Publicação
-Pode ser publicado no Netlify. Não altere a chave para uma secret key.
+## Deploy
+Substitua os arquivos do projeto no GitHub/Netlify pelos arquivos desta pasta.
+O cache do Service Worker foi alterado para `vimak-crm-v6-2-clientes-pro`.
