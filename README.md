@@ -1,4 +1,4 @@
-# VIMAK CRM V6.20 — LEADS & CRM INTELLIGENCE
+# VIMAK CRM V6.20.1 — LOGIN HOTFIX + LEADS CRM INTELLIGENCE
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -315,3 +315,13 @@ CFO Command Center inspirado em práticas de ERP corporativo:
 - Alertas de leads sem contato e priorização por score.
 - Migration aditiva `007_leads_crm_intelligence.sql`.
 - Mantém os módulos V6.13–V6.19.
+
+
+## V6.20.1 — Login Hotfix
+- Preserva integralmente o módulo Leads & CRM Intelligence da V6.20.
+- Corrige o login que podia permanecer em "Login realizado. Carregando sua empresa...".
+- O login agora assume diretamente a sessão retornada por `signInWithPassword`, carrega perfil/empresa e abre o CRM.
+- Evita bootstrap duplicado no callback `onAuthStateChange`.
+- Normaliza rotas com `#/rota` e `#rota`.
+- Layout e credenciais/autenticação Supabase permanecem os mesmos.
+- Service Worker recebeu cache novo para impedir reutilização da V6.20 anterior.

@@ -11,7 +11,10 @@ const NAV=[
 ["FINANCEIRO",[["financeiro","◉","Financeiro"],["maquininhas","▤","Maquininhas & Taxas"]]]
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
-let page=location.hash.slice(1)||"dashboard";
+function normalizeRouteHash(){
+  return (location.hash.slice(1)||"dashboard").replace(/^\/+|\/+$/g,"")||"dashboard";
+}
+let page=normalizeRouteHash();
 let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],measurements:[],purchaseOrders:[],purchaseOrderItems:[],documentTemplates:[],productionProjects:[],cuttingPlans:[],sheetRemnants:[],integrations:[],installationTeams:[],installationSchedule:[],leadActivities:[],leadTasks:[],costCenters:[],bankAccounts:[],accountsReceivable:[],accountsPayable:[],invoices:[],cardMachines:[],cardMachineRates:[],cardTransactions:[],cardSettlements:[],financeBudgets:[],financeBudgetItems:[],financeTransactions:[],financeApprovals:[],financeEntities:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
 const sb = supabase.createClient(
@@ -38,11 +41,22 @@ async function init(){
   } else showAuth();
 
   sb.auth.onAuthStateChange(async (_event,s2)=>{
+    if(!s2){
+      session=null;
+      profile=null;
+      company=null;
+      showAuth();
+      return;
+    }
+
+    // Se o login() já assumiu esta mesma sessão, não executa o bootstrap duas vezes.
+    if(session?.access_token===s2.access_token && profile && company){
+      return;
+    }
+
     session=s2;
-    if(session){
-      const ok=await loadIdentity();
-      if(ok) showApp(); else showAuth();
-    } else showAuth();
+    const ok=await loadIdentity();
+    if(ok) showApp(); else showAuth();
   });
 }
 function showAuth(){authScreen.classList.remove("hidden");appShell.classList.add("hidden")}
@@ -83,7 +97,18 @@ async function login(e){
       return;
     }
 
+    // HOTFIX V6.20.1:
+    // assume a sessão retornada pelo próprio signIn, carrega identidade e abre o CRM
+    // imediatamente, sem ficar preso esperando apenas onAuthStateChange.
+    session=data.session;
     status.innerHTML = "<b>Login realizado.</b><span>Carregando sua empresa...</span>";
+
+    const ok=await loadIdentity();
+    if(!ok){
+      return;
+    }
+
+    showApp();
     toast("Login realizado com sucesso");
   }catch(err){
     console.error(err);
