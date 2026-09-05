@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-12-producao-kanban-pro';
+const CACHE = 'vimak-crm-v6-13-smartcut-pro';
 
 const ASSETS = [
   './',

@@ -1,4 +1,4 @@
-# VIMAK CRM V6.12 — PRODUÇÃO KANBAN PRO
+# VIMAK CRM V6.13 — SMARTCUT INTEGRATION HUB
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -204,4 +204,19 @@ A policy existente isola os arquivos pelo primeiro diretório do caminho, que é
 - Visual Kanban e visual Lista.
 - Filtros de atrasados e urgentes + busca.
 - Timeline completa da ordem e atalhos para Medições e Compras.
+- Nenhuma migration nova necessária.
+
+
+## V6.13 — Plano de Corte / SmartCut Integration Hub
+- Importação normalizada de CSV, TXT, TSV e XML.
+- Perfis de origem: Promob, Cortecloud, SketchUp/OpenCutList, Corte Certo e arquivos universais.
+- Reconhecimento flexível de colunas de peça, material, comprimento, largura, espessura, quantidade, veio e fita.
+- Otimizador interno guilhotina com agrupamento por material e espessura.
+- Configuração de chapa, espessura de serra, refilo, sentido do veio e sobra mínima.
+- Visualização gráfica SVG das chapas e peças.
+- KPIs de chapas, aproveitamento, perda e sobras úteis.
+- Persistência completa em `cutting_plans.data` no Supabase.
+- Exportação CSV Universal, Corte Certo, Cortecloud e SketchUp/OpenCutList.
+- Impressão técnica do plano de corte.
+- Integrações diretas por API ficam condicionadas a credenciais/plugins oficiais dos fornecedores.
 - Nenhuma migration nova necessária.
