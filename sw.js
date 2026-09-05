@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-17-agenda-montagem-pro';
+const CACHE = 'vimak-crm-v6-18-finance-enterprise';
 
 const ASSETS = [
   './',

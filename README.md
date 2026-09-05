@@ -1,4 +1,4 @@
-# VIMAK CRM V6.17 — AGENDA DE MONTAGEM PRO
+# VIMAK CRM V6.18 — FINANCEIRO ENTERPRISE
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -279,3 +279,16 @@ Para produção SaaS, tokens Cortecloud devem ficar em backend/Edge Function, nu
 - Central da Ordem de Montagem com início/conclusão rápida.
 - Painel lateral de capacidade e próxima montagem por equipe.
 - Migration aditiva `004_installation_schedule_pro.sql`.
+
+
+## V6.18 — Financeiro Enterprise
+CFO Command Center inspirado em práticas de ERP corporativo:
+- Cockpit executivo: caixa, recebíveis, pagamentos, inadimplência, aging e riscos.
+- Contas a receber e a pagar com centro de custo.
+- Tesouraria e projeções D+7/D+15/D+30/D+60/D+90.
+- DRE gerencial de 12 meses.
+- Budget & Forecast (FP&A).
+- Governança: aprovações, entidades/unidades e controles internos.
+- Estrutura multi-entidade e multimoeda preparada para expansão.
+- Migration aditiva `005_finance_enterprise.sql`.
+- A implementação não substitui escrituração contábil/fiscal oficial nem integrações bancárias homologadas.
