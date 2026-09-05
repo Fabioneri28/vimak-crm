@@ -1,4 +1,4 @@
-# VIMAK CRM V6.13 — SMARTCUT INTEGRATION HUB
+# VIMAK CRM V6.14 — ZERO WASTE MDF
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -220,3 +220,16 @@ A policy existente isola os arquivos pelo primeiro diretório do caminho, que é
 - Impressão técnica do plano de corte.
 - Integrações diretas por API ficam condicionadas a credenciais/plugins oficiais dos fornecedores.
 - Nenhuma migration nova necessária.
+
+
+## V6.14 — Estoque Inteligente de Sobras
+- `sheet_remnants` integrado ao SmartCut V6.13.
+- Importação de sobras geométricas dos planos salvos.
+- Etiquetas individuais, localização física e rastreabilidade.
+- Motor best-fit cruza peças x sobras por material, espessura e geometria.
+- Reserva antes do corte; estados Disponível, Reservada, Consumida e Descartada.
+- KPIs de área recuperável e materiais/espessuras.
+- Impressão de etiquetas e exportação CSV.
+- Sem migration nova.
+
+O objetivo é maximizar o reaproveitamento; 100% físico não é garantível devido a serra, refilo, defeitos, veio e formatos irregulares.
