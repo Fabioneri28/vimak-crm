@@ -1,4 +1,4 @@
-# VIMAK CRM V6.15 — INTEGRAÇÃO CORTECLOUD PRO
+# VIMAK CRM V6.16 — EQUIPES DE MONTAGEM PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -254,3 +254,14 @@ Para produção SaaS, tokens Cortecloud devem ficar em backend/Edge Function, nu
 - Corrigido roteamento de `#cortecloud`: a rota agora renderiza o dashboard completo da Integração Cortecloud.
 - Restaurada `cutSources()` do SmartCut V6.13.
 - Cache do Service Worker renovado para publicação limpa.
+
+
+## V6.16 — Equipes de Montagem PRO
+- Central de equipes com capacidade, disponibilidade, região, veículo e competências.
+- Composição individual da equipe (nome, função, telefone e competências).
+- Custo/dia, nota interna, meta de qualidade e checklists de EPI/ferramentas/veículo.
+- Histórico real vinculado a `installation_schedule`.
+- Ocupação mensal estimada, próxima montagem, ranking e mapa de capacidade.
+- Busca e filtros operacionais.
+- Migration aditiva `003_installation_teams_pro.sql` adiciona apenas `metadata jsonb`.
+- Preserva V6.13 SmartCut, V6.14 Zero Waste e V6.15 Cortecloud.

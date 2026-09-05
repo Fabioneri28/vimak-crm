@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-15-cortecloud-pro-fix1';
+const CACHE = 'vimak-crm-v6-16-equipes-montagem-pro';
 
 const ASSETS = [
   './',
