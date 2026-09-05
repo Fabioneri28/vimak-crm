@@ -1,6 +1,4 @@
--- V6.20 Leads & CRM Intelligence
--- Migração aditiva: preserva leads existentes.
-
+-- V6.20 Leads & CRM Intelligence — sobre base estável V6.19
 alter table public.leads add column if not exists stage text default 'Entrada';
 alter table public.leads add column if not exists source text;
 alter table public.leads add column if not exists temperature text default 'Morno';
@@ -23,7 +21,6 @@ create table if not exists public.lead_activities (
  metadata jsonb not null default '{}'::jsonb,
  created_at timestamptz not null default now()
 );
-
 create table if not exists public.lead_tasks (
  id uuid primary key default gen_random_uuid(),
  company_id uuid not null references public.companies(id) on delete cascade,
@@ -39,21 +36,15 @@ create table if not exists public.lead_tasks (
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_leads_company_stage on public.leads(company_id,stage);
-create index if not exists idx_leads_company_score on public.leads(company_id,score);
 create index if not exists idx_lead_activities_lead_date on public.lead_activities(company_id,lead_id,created_at desc);
 create index if not exists idx_lead_tasks_due on public.lead_tasks(company_id,status,due_at);
-
 alter table public.lead_activities enable row level security;
 alter table public.lead_tasks enable row level security;
-
 drop policy if exists tenant_lead_activities on public.lead_activities;
 create policy tenant_lead_activities on public.lead_activities for all to authenticated
 using(company_id=public.current_company_id()) with check(company_id=public.current_company_id());
-
 drop policy if exists tenant_lead_tasks on public.lead_tasks;
 create policy tenant_lead_tasks on public.lead_tasks for all to authenticated
 using(company_id=public.current_company_id()) with check(company_id=public.current_company_id());
-
 grant all on public.lead_activities,public.lead_tasks to authenticated,service_role;
