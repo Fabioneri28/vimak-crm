@@ -1,4 +1,4 @@
-# VIMAK CRM V6.8 — MODELOS DE PROPOSTA PRO
+# VIMAK CRM V6.9 — MEDIÇÕES TÉCNICAS PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -127,3 +127,42 @@ Não é necessária uma nova migration para o módulo Propostas PRO.
 ### Banco
 Utiliza a tabela `proposal_models`, que já existe desde a migration inicial.
 Nenhuma nova migration é necessária para esta versão.
+
+
+## V6.9 — Medições Técnicas PRO
+
+A V6.9 transforma o módulo de Medições em uma central técnica de campo.
+
+### Recursos
+- Medições reais gravadas na tabela `measurements`.
+- Vínculo com Cliente e Proposta.
+- Código automático de medição.
+- Status: Rascunho, Pendente, Em andamento, Aguardando projeto, Concluída e Cancelada.
+- Cadastro de múltiplos ambientes.
+- Medidas rápidas por tipo: largura, altura, profundidade, vão, parede, bancada, eletro e geral.
+- Registro recomendado em milímetros.
+- Pé-direito, desnível, parede, esquadro e rodapé.
+- Pontos elétricos e hidráulicos.
+- Portas, janelas, vãos e interferências.
+- Observações individuais por ambiente.
+- Checklist técnico completo.
+- Histórico de salvamentos/finalização.
+- Upload por botão, seleção múltipla ou arrastar e soltar.
+- Categorias para fotos e arquivos.
+- Suporte de interface para JPG, JPEG, PNG, WEBP, HEIC, HEIF, AVIF, GIF, BMP, TIFF, PDF, DWG, DXF, SKP, ZIP, RAR, 7Z, XLS, XLSX, CSV, DOC, DOCX, TXT e RTF.
+- Limite de 50 MB por arquivo no cliente.
+- Upload real para o bucket privado `crm-documents`.
+- Arquivos isolados por empresa e medição.
+- Links temporários assinados para abrir arquivos privados.
+- Exclusão de arquivos do Storage.
+- Croqui técnico com desenho livre, linhas e borracha.
+- Croqui salvo como PNG diretamente no Storage.
+- KPIs de medições, andamento, aguardando projeto, concluídas e arquivos técnicos.
+- Layout responsivo inspirado no conceito premium preto/dourado do VIMAK.
+
+### Banco de dados
+Usa a tabela `measurements`, já existente na migration inicial. Não exige alteração de schema.
+
+### Storage
+A V6.9 utiliza o bucket privado `crm-documents`. O arquivo `supabase/measurement_storage.sql` documenta a configuração.
+A policy existente isola os arquivos pelo primeiro diretório do caminho, que é o `company_id`.

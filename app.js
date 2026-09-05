@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],measurements:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -148,12 +148,13 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p,pi,pm,s,pa,as,i]=await Promise.all([
+  const [c,l,p,pi,pm,m,s,pa,as,i]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
     sb.from("proposals").select("*").order("created_at",{ascending:false}),
     sb.from("proposal_items").select("*").order("created_at",{ascending:true}),
     sb.from("proposal_models").select("*").order("created_at",{ascending:false}),
+    sb.from("measurements").select("*").order("measured_at",{ascending:false}),
     sb.from("suppliers").select("*").order("created_at",{ascending:false}),
     sb.from("partners").select("*").order("created_at",{ascending:false}),
     sb.from("after_sales_tickets").select("*").order("opened_at",{ascending:false}),
@@ -164,6 +165,7 @@ async function refreshCore(){
   cache.proposals=p.data||[];
   cache.proposalItems=pi.data||[];
   cache.proposalModels=pm.data||[];
+  cache.measurements=m.data||[];
   cache.suppliers=s.data||[];
   cache.partners=pa.data||[];
   cache.afterSales=as.data||[];
@@ -1289,7 +1291,585 @@ function modelos(){
     <div class="filters"><div class="field"><label>Buscar modelo</label><input placeholder="Nome, ambiente, status..." oninput="filterTable(this.value)"></div></div>
     <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Modelo</th><th>Ambientes</th><th>Valor base</th><th>Entrega</th><th>Status</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="6">Nenhum modelo cadastrado. Crie seu primeiro modelo de proposta.</td></tr>`}</tbody></table></div></div>`);
 }
-function medicoes(){return simpleTable("Medições Técnicas","Módulo conectado na próxima expansão","",["Cliente","Ambientes","Data","Ações"],[])}
+
+let measurementEditorId=null;
+let measurementDraft=null;
+let measurementTab="dados";
+let measurementActiveEnvironment=0;
+let measurementCanvasState={tool:"draw",drawing:false,startX:0,startY:0,lastX:0,lastY:0};
+
+function measurementById(id){return cache.measurements.find(x=>x.id===id)}
+function measurementData(x){return (x&&x.measurements&&typeof x.measurements==="object")?x.measurements:{}}
+function measurementAttachments(x){return Array.isArray(x?.attachments)?x.attachments:[]}
+function measurementStatus(x){return measurementData(x).status||"Rascunho"}
+function measurementCode(x){
+  const d=measurementData(x);
+  return d.code||("MED-"+String(cache.measurements.indexOf(x)+1).padStart(5,"0"));
+}
+function measurementClient(id){return cache.clients.find(x=>x.id===id)}
+function measurementProposal(id){return cache.proposals.find(x=>x.id===id)}
+function measurementStatusClass(s){
+  if(["Concluída","Finalizada"].includes(s))return "ok";
+  if(["Em andamento","Em Medição"].includes(s))return "blue";
+  if(["Pendente","Aguardando projeto"].includes(s))return "";
+  if(["Cancelada"].includes(s))return "bad";
+  return "";
+}
+function measurementFormatDate(v){return v?new Date(v).toLocaleDateString("pt-BR"):"—"}
+function measurementTodayInput(v){
+  const d=v?new Date(v):new Date();
+  const off=d.getTimezoneOffset();
+  return new Date(d.getTime()-off*60000).toISOString().slice(0,10);
+}
+function measurementNewCode(){
+  const now=new Date();
+  const y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,"0"),d=String(now.getDate()).padStart(2,"0");
+  const n=String(cache.measurements.length+1).padStart(3,"0");
+  return `MED-${y}${m}${d}-${n}`;
+}
+function measurementEmptyEnvironment(name="Novo Ambiente"){
+  return {
+    id:crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random()),
+    name,
+    status:"Pendente",
+    dimensions:[],
+    openings:[],
+    electrical:[],
+    plumbing:[],
+    obstacles:[],
+    notes:"",
+    ceiling_height:"",
+    floor_level:"",
+    wall_condition:"",
+    squareness:"",
+    baseboard:"",
+    photos:[]
+  };
+}
+function measurementBuildDraft(x={}){
+  const d=measurementData(x);
+  return {
+    id:x.id||null,
+    client_id:x.client_id||"",
+    proposal_id:x.proposal_id||"",
+    measured_at:measurementTodayInput(x.measured_at),
+    notes:x.notes||"",
+    attachments:measurementAttachments(x).map(a=>({...a})),
+    data:{
+      code:d.code||measurementNewCode(),
+      status:d.status||"Rascunho",
+      address:d.address||"",
+      team:d.team||"Técnico",
+      environments:Array.isArray(d.environments)&&d.environments.length?d.environments.map(e=>({...measurementEmptyEnvironment(),...e})):[],
+      checklist:d.checklist||{
+        paredes:false,esquadro:false,nivel:false,rodape:false,teto:false,
+        eletrica:false,hidraulica:false,gas:false,ar:false,revestimentos:false,
+        portas:false,janelas:false,eletros:false,interferencias:false
+      },
+      history:Array.isArray(d.history)?d.history:[],
+      general_notes:d.general_notes||"",
+      tags:Array.isArray(d.tags)?d.tags:[]
+    }
+  };
+}
+function measurementProposalOptions(selected="",clientId=""){
+  return cache.proposals
+    .filter(p=>!clientId||p.client_id===clientId)
+    .map(p=>`<option value="${p.id}" ${selected===p.id?"selected":""}>${proposalNumber(p.number)} • ${esc(p.title)}</option>`).join("");
+}
+function measurementClientOptions(selected=""){
+  return cache.clients.map(c=>`<option value="${c.id}" ${selected===c.id?"selected":""}>${esc(c.name)}${c.city?" • "+esc(c.city):""}</option>`).join("");
+}
+function startMeasurement(){
+  measurementEditorId=null;
+  measurementDraft=measurementBuildDraft({});
+  measurementTab="dados";measurementActiveEnvironment=0;
+  render();
+}
+function editMeasurement(id){
+  const x=measurementById(id);if(!x)return toast("Medição não encontrada");
+  measurementEditorId=id;
+  measurementDraft=measurementBuildDraft(x);
+  measurementTab="dados";measurementActiveEnvironment=0;
+  render();
+}
+function closeMeasurementEditor(){
+  measurementEditorId=null;measurementDraft=null;measurementTab="dados";measurementActiveEnvironment=0;render();
+}
+function measurementSwitchTab(tab){
+  measurementTab=tab;
+  document.querySelectorAll(".measurement-tab").forEach(x=>x.classList.toggle("active",x.dataset.tab===tab));
+  document.querySelectorAll(".measurement-panel").forEach(x=>x.classList.toggle("active",x.dataset.panel===tab));
+  if(tab==="croqui")setTimeout(initMeasurementCanvas,40);
+}
+function measurementSyncGeneral(){
+  if(!measurementDraft)return;
+  const q=id=>document.getElementById(id);
+  if(q("measureClient"))measurementDraft.client_id=q("measureClient").value;
+  if(q("measureProposal"))measurementDraft.proposal_id=q("measureProposal").value;
+  if(q("measureDate"))measurementDraft.measured_at=q("measureDate").value;
+  if(q("measureStatus"))measurementDraft.data.status=q("measureStatus").value;
+  if(q("measureAddress"))measurementDraft.data.address=q("measureAddress").value;
+  if(q("measureTeam"))measurementDraft.data.team=q("measureTeam").value;
+  if(q("measureGeneralNotes"))measurementDraft.data.general_notes=q("measureGeneralNotes").value;
+}
+function measurementRefreshProposalSelect(){
+  measurementSyncGeneral();
+  const el=document.getElementById("measureProposal");
+  if(el)el.innerHTML=`<option value="">Sem proposta vinculada</option>${measurementProposalOptions(measurementDraft.proposal_id,measurementDraft.client_id)}`;
+}
+function measurementAddEnvironment(){
+  measurementSyncGeneral();
+  const name=prompt("Nome do ambiente:","Cozinha");
+  if(!name||!name.trim())return;
+  measurementDraft.data.environments.push(measurementEmptyEnvironment(name.trim()));
+  measurementActiveEnvironment=measurementDraft.data.environments.length-1;
+  measurementTab="ambientes";render();
+}
+function measurementDeleteEnvironment(idx){
+  if(!confirm("Excluir este ambiente e suas medidas?"))return;
+  measurementDraft.data.environments.splice(idx,1);
+  measurementActiveEnvironment=Math.max(0,Math.min(measurementActiveEnvironment,measurementDraft.data.environments.length-1));
+  render();
+}
+function measurementSetEnvironment(idx){measurementActiveEnvironment=idx;render()}
+function measurementEnvironment(){
+  return measurementDraft?.data?.environments?.[measurementActiveEnvironment]||null;
+}
+function measurementAddDimension(){
+  const env=measurementEnvironment();if(!env)return toast("Adicione um ambiente primeiro");
+  const label=document.getElementById("quickDimLabel")?.value.trim()||"Medida";
+  const value=Number(document.getElementById("quickDimValue")?.value||0);
+  const unit=document.getElementById("quickDimUnit")?.value||"mm";
+  const type=document.getElementById("quickDimType")?.value||"Geral";
+  if(!value)return toast("Informe o valor da medida");
+  env.dimensions.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),label,value,unit,type});
+  render();
+}
+function measurementRemoveDimension(idx){
+  const env=measurementEnvironment();if(!env)return;
+  env.dimensions.splice(idx,1);render();
+}
+function measurementUpdateEnvField(field,value){
+  const env=measurementEnvironment();if(!env)return;
+  env[field]=value;
+}
+function measurementAddTechnicalPoint(kind){
+  const env=measurementEnvironment();if(!env)return toast("Adicione um ambiente");
+  const labels={electrical:"Ponto elétrico",plumbing:"Ponto hidráulico",openings:"Porta / Janela",obstacles:"Interferência"};
+  const desc=prompt(labels[kind]+" — descrição:");
+  if(!desc)return;
+  const h=prompt("Altura do piso (mm), se aplicável:","");
+  env[kind].push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),description:desc,height:h?Number(h):null});
+  render();
+}
+function measurementRemoveTechnicalPoint(kind,idx){
+  const env=measurementEnvironment();if(!env)return;
+  env[kind].splice(idx,1);render();
+}
+function measurementToggleCheck(key,checked){measurementDraft.data.checklist[key]=checked}
+function measurementFileIcon(a){
+  const t=String(a.type||"").toLowerCase();
+  if(t.startsWith("image/"))return "📷";
+  if(t.includes("pdf"))return "📕";
+  if(t.includes("dwg")||t.includes("dxf"))return "📐";
+  if(t.includes("zip"))return "🗜";
+  if(t.includes("sheet")||t.includes("excel"))return "📊";
+  return "📎";
+}
+function measurementFileAccept(){
+  return ".jpg,.jpeg,.png,.webp,.heic,.heif,.avif,.gif,.bmp,.tif,.tiff,.pdf,.dwg,.dxf,.skp,.zip,.rar,.7z,.xls,.xlsx,.csv,.doc,.docx,.txt,.rtf";
+}
+function measurementUploadArea(){
+  const cats=["Fotos do ambiente","Visão geral","Detalhes","Elétrica","Hidráulica","Portas e janelas","Interferências","Planta baixa","Projeto","Documento"];
+  return `<div class="measurement-upload-wrap">
+    <div class="measurement-dropzone" id="measurementDropzone"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="measurementHandleDrop(event)">
+      <div class="upload-cloud">☁</div>
+      <b>Arraste arquivos aqui ou clique para selecionar</b>
+      <span>Fotos, plantas, desenhos, PDFs e documentos técnicos</span>
+      <small>JPG, PNG, WEBP, HEIC, PDF, DWG, DXF, SKP, ZIP, XLSX, DOCX e outros • até 50 MB por arquivo</small>
+      <button class="btn gold" type="button" onclick="document.getElementById('measurementFiles').click()">+ Escolher arquivos</button>
+      <input id="measurementFiles" type="file" multiple accept="${measurementFileAccept()}" hidden onchange="measurementUploadFiles(this.files)">
+    </div>
+    <div class="field" style="margin-top:10px"><label>Categoria dos próximos uploads</label>
+      <select id="measurementUploadCategory">${cats.map(x=>`<option>${x}</option>`).join("")}</select>
+    </div>
+  </div>`;
+}
+async function measurementHandleDrop(event){
+  event.preventDefault();event.currentTarget.classList.remove("drag");
+  await measurementUploadFiles(event.dataTransfer.files);
+}
+async function ensureMeasurementDraft(){
+  measurementSyncGeneral();
+  if(!measurementDraft.client_id){toast("Selecione o cliente antes de enviar arquivos");return null}
+  if(measurementDraft.id)return measurementDraft.id;
+  measurementDraft.data.history.push({at:new Date().toISOString(),action:"Medição iniciada",user:profile.name});
+  const payload={
+    company_id:profile.company_id,
+    client_id:measurementDraft.client_id||null,
+    proposal_id:measurementDraft.proposal_id||null,
+    environments:measurementDraft.data.environments.map(e=>e.name),
+    measurements:measurementDraft.data,
+    attachments:measurementDraft.attachments,
+    measured_at:new Date(measurementDraft.measured_at+"T12:00:00").toISOString(),
+    responsible_id:session.user.id,
+    notes:measurementDraft.notes||null
+  };
+  const {data,error}=await sb.from("measurements").insert(payload).select("id").single();
+  if(error){toast("Erro ao iniciar medição: "+error.message);return null}
+  measurementDraft.id=data.id;measurementEditorId=data.id;
+  return data.id;
+}
+async function measurementUploadFiles(fileList){
+  const files=[...(fileList||[])];
+  if(!files.length)return;
+  const measurementId=await ensureMeasurementDraft();if(!measurementId)return;
+  const category=document.getElementById("measurementUploadCategory")?.value||"Documento";
+  const max=50*1024*1024;
+  for(const file of files){
+    if(file.size>max){toast(`${file.name}: excede 50 MB`);continue}
+    const clean=file.name.replace(/[^\w.\-]+/g,"_");
+    const path=`${profile.company_id}/measurements/${measurementId}/${Date.now()}_${clean}`;
+    toast("Enviando "+file.name+"...");
+    const {error}=await sb.storage.from("crm-documents").upload(path,file,{upsert:false,contentType:file.type||undefined});
+    if(error){toast("Falha no upload: "+error.message);continue}
+    measurementDraft.attachments.push({
+      id:crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random()),
+      name:file.name,path,type:file.type||"application/octet-stream",size:file.size,category,
+      uploaded_at:new Date().toISOString()
+    });
+  }
+  await saveMeasurement("Rascunho",true);
+  toast("Arquivos enviados e vinculados à medição");
+}
+async function measurementOpenAttachment(path){
+  const {data,error}=await sb.storage.from("crm-documents").createSignedUrl(path,3600);
+  if(error)return toast("Erro ao abrir arquivo: "+error.message);
+  window.open(data.signedUrl,"_blank");
+}
+async function measurementDeleteAttachment(idx){
+  const a=measurementDraft.attachments[idx];if(!a)return;
+  if(!confirm("Excluir este arquivo da medição?"))return;
+  if(a.path){
+    const {error}=await sb.storage.from("crm-documents").remove([a.path]);
+    if(error)return toast("Erro ao excluir arquivo: "+error.message);
+  }
+  measurementDraft.attachments.splice(idx,1);
+  await saveMeasurement("Rascunho",true);render();
+}
+function measurementAttachmentCards(){
+  const arr=measurementDraft.attachments||[];
+  if(!arr.length)return `<div class="empty measurement-empty-files">Nenhum arquivo enviado ainda.</div>`;
+  return arr.map((a,idx)=>`<div class="measurement-file-card">
+    <div class="measurement-file-icon">${measurementFileIcon(a)}</div>
+    <div class="measurement-file-meta"><b>${esc(a.name)}</b><span>${esc(a.category||"Arquivo")} • ${(Number(a.size||0)/1024/1024).toFixed(1)} MB</span></div>
+    <div class="row-actions"><button class="btn sm" onclick="measurementOpenAttachment('${esc(a.path)}')">Abrir</button><button class="btn sm danger" onclick="measurementDeleteAttachment(${idx})">Excluir</button></div>
+  </div>`).join("");
+}
+function measurementChecklist(){
+  const c=measurementDraft.data.checklist||{};
+  const items=[
+    ["paredes","Paredes conferidas"],["esquadro","Esquadro / diagonais"],["nivel","Nível de piso"],
+    ["rodape","Rodapés"],["teto","Pé-direito / teto"],["eletrica","Pontos elétricos"],["hidraulica","Hidráulica"],
+    ["gas","Ponto de gás"],["ar","Ar-condicionado"],["revestimentos","Revestimentos"],["portas","Portas"],
+    ["janelas","Janelas"],["eletros","Eletrodomésticos"],["interferencias","Interferências"]
+  ];
+  return `<div class="measurement-check-grid">${items.map(([k,l])=>`<label class="measurement-check ${c[k]?"done":""}"><input type="checkbox" ${c[k]?"checked":""} onchange="measurementToggleCheck('${k}',this.checked);this.parentElement.classList.toggle('done',this.checked)"><span>✓</span>${l}</label>`).join("")}</div>`;
+}
+function measurementEnvironmentList(){
+  const envs=measurementDraft.data.environments||[];
+  return `<div class="measurement-env-list">
+    ${envs.map((e,i)=>`<button class="measurement-env-item ${i===measurementActiveEnvironment?"active":""}" onclick="measurementSetEnvironment(${i})">
+      <div><b>${esc(e.name)}</b><span>${e.dimensions?.length||0} medidas • ${(e.electrical?.length||0)+(e.plumbing?.length||0)} pontos técnicos</span></div>
+      <span class="badge ${e.status==="Concluído"?"ok":e.status==="Em andamento"?"blue":""}">${esc(e.status||"Pendente")}</span>
+    </button>`).join("")||`<div class="empty">Nenhum ambiente adicionado.</div>`}
+    <button class="btn gold full" onclick="measurementAddEnvironment()">+ Adicionar Ambiente</button>
+  </div>`;
+}
+function measurementEnvironmentEditor(){
+  const e=measurementEnvironment();
+  if(!e)return `<div class="card pad measurement-empty-env"><h3>Comece pelos ambientes</h3><p>Adicione cozinha, dormitório, banheiro, lavanderia, sala ou qualquer outro ambiente que será medido.</p><button class="btn gold" onclick="measurementAddEnvironment()">+ Adicionar primeiro ambiente</button></div>`;
+  const technical=(kind,title)=>`<div class="measurement-tech-block"><div class="measurement-tech-head"><b>${title}</b><button class="btn sm" onclick="measurementAddTechnicalPoint('${kind}')">+ Adicionar</button></div>${(e[kind]||[]).map((p,i)=>`<div class="measurement-tech-row"><span>${esc(p.description)}${p.height!=null?` • h ${p.height} mm`:""}</span><button onclick="measurementRemoveTechnicalPoint('${kind}',${i})">×</button></div>`).join("")||`<small>Nenhum registro.</small>`}</div>`;
+  return `<div class="measurement-env-editor">
+    <div class="measurement-env-title">
+      <div><span>AMBIENTE ATIVO</span><input value="${esc(e.name)}" oninput="measurementUpdateEnvField('name',this.value)"></div>
+      <select onchange="measurementUpdateEnvField('status',this.value)">${["Pendente","Em andamento","Concluído"].map(s=>`<option ${e.status===s?"selected":""}>${s}</option>`).join("")}</select>
+      <button class="btn sm danger" onclick="measurementDeleteEnvironment(${measurementActiveEnvironment})">Excluir ambiente</button>
+    </div>
+    <div class="measurement-room-grid">
+      <div class="field"><label>Pé-direito (mm)</label><input type="number" value="${esc(e.ceiling_height||"")}" oninput="measurementUpdateEnvField('ceiling_height',this.value)"></div>
+      <div class="field"><label>Desnível do piso (mm)</label><input type="number" value="${esc(e.floor_level||"")}" oninput="measurementUpdateEnvField('floor_level',this.value)"></div>
+      <div class="field"><label>Condição das paredes</label><select onchange="measurementUpdateEnvField('wall_condition',this.value)"><option></option>${["Regular","Irregular","Fora de prumo","Revestida","Drywall"].map(v=>`<option ${e.wall_condition===v?"selected":""}>${v}</option>`).join("")}</select></div>
+      <div class="field"><label>Esquadro</label><select onchange="measurementUpdateEnvField('squareness',this.value)"><option></option>${["Conferido","Fora de esquadro","A conferir"].map(v=>`<option ${e.squareness===v?"selected":""}>${v}</option>`).join("")}</select></div>
+      <div class="field"><label>Rodapé</label><input value="${esc(e.baseboard||"")}" placeholder="Ex.: 100 mm, granito..." oninput="measurementUpdateEnvField('baseboard',this.value)"></div>
+    </div>
+    <div class="measurement-dim-table">
+      <div class="measurement-section-title"><h3>Medidas registradas</h3><span>${e.dimensions?.length||0} medidas</span></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Tipo</th><th>Descrição</th><th>Valor</th><th>Unidade</th><th></th></tr></thead><tbody>
+        ${(e.dimensions||[]).map((d,i)=>`<tr><td>${esc(d.type||"Geral")}</td><td><b>${esc(d.label)}</b></td><td class="goldtxt"><b>${Number(d.value).toLocaleString("pt-BR")}</b></td><td>${esc(d.unit||"mm")}</td><td><button class="btn sm danger" onclick="measurementRemoveDimension(${i})">Excluir</button></td></tr>`).join("")||`<tr><td class="empty" colspan="5">Nenhuma medida registrada.</td></tr>`}
+      </tbody></table></div>
+    </div>
+    <div class="measurement-tech-grid">
+      ${technical("electrical","⚡ Pontos elétricos")}
+      ${technical("plumbing","💧 Hidráulica")}
+      ${technical("openings","▣ Portas e janelas")}
+      ${technical("obstacles","⚠ Interferências")}
+    </div>
+    <div class="field"><label>Observações do ambiente</label><textarea rows="5" oninput="measurementUpdateEnvField('notes',this.value)" placeholder="Prumo, parede oca, tubulação, recortes, acabamento, detalhes críticos...">${esc(e.notes||"")}</textarea></div>
+  </div>`;
+}
+function measurementQuickPanel(){
+  return `<div class="measurement-quick">
+    <h3>Medidas Rápidas</h3>
+    <div class="field"><label>Tipo</label><select id="quickDimType">${["Largura","Altura","Profundidade","Vão","Parede","Bancada","Eletro","Geral"].map(x=>`<option>${x}</option>`).join("")}</select></div>
+    <div class="field"><label>Descrição</label><input id="quickDimLabel" placeholder="Ex.: Parede principal"></div>
+    <div class="field"><label>Valor</label><input id="quickDimValue" type="number" step="0.1" placeholder="3200"></div>
+    <div class="field"><label>Unidade</label><select id="quickDimUnit"><option>mm</option><option>cm</option><option>m</option></select></div>
+    <button class="btn gold full" onclick="measurementAddDimension()">+ Adicionar Medida</button>
+    <div class="measurement-quick-tip"><b>Padrão recomendado:</b><span>registre medidas lineares em milímetros para reduzir erros de conversão na produção.</span></div>
+  </div>`;
+}
+function measurementCanvasHTML(){
+  return `<div class="measurement-canvas-shell">
+    <div class="measurement-canvas-toolbar">
+      <button class="btn sm active" data-tool="draw" onclick="measurementCanvasTool('draw',this)">✎ Desenhar</button>
+      <button class="btn sm" data-tool="line" onclick="measurementCanvasTool('line',this)">╱ Linha</button>
+      <button class="btn sm" data-tool="erase" onclick="measurementCanvasTool('erase',this)">⌫ Borracha</button>
+      <button class="btn sm" onclick="measurementCanvasClear()">Limpar</button>
+      <button class="btn sm gold" onclick="saveMeasurementSketch()">Salvar croqui como PNG</button>
+    </div>
+    <div class="measurement-canvas-wrap"><canvas id="measurementCanvas" width="1100" height="600"></canvas></div>
+    <small class="muted">Use mouse ou toque para registrar croquis rápidos. O croqui pode ser salvo diretamente nos arquivos da medição.</small>
+  </div>`;
+}
+function measurementCanvasTool(tool,btn){
+  measurementCanvasState.tool=tool;
+  document.querySelectorAll(".measurement-canvas-toolbar [data-tool]").forEach(x=>x.classList.remove("active"));
+  if(btn)btn.classList.add("active");
+}
+function initMeasurementCanvas(){
+  const canvas=document.getElementById("measurementCanvas");if(!canvas||canvas.dataset.ready)return;
+  canvas.dataset.ready="1";
+  const ctx=canvas.getContext("2d");
+  ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle="#dedede";ctx.lineWidth=1;
+  for(let x=0;x<canvas.width;x+=25){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}
+  for(let y=0;y<canvas.height;y+=25){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}
+  const pos=e=>{
+    const r=canvas.getBoundingClientRect(),p=e.touches?e.touches[0]:e;
+    return {x:(p.clientX-r.left)*canvas.width/r.width,y:(p.clientY-r.top)*canvas.height/r.height};
+  };
+  const start=e=>{e.preventDefault();const p=pos(e);measurementCanvasState.drawing=true;measurementCanvasState.startX=p.x;measurementCanvasState.startY=p.y;measurementCanvasState.lastX=p.x;measurementCanvasState.lastY=p.y};
+  const move=e=>{
+    if(!measurementCanvasState.drawing)return;e.preventDefault();
+    const p=pos(e);ctx.lineCap="round";
+    if(measurementCanvasState.tool==="draw"||measurementCanvasState.tool==="erase"){
+      ctx.strokeStyle=measurementCanvasState.tool==="erase"?"#ffffff":"#111111";ctx.lineWidth=measurementCanvasState.tool==="erase"?18:3;
+      ctx.beginPath();ctx.moveTo(measurementCanvasState.lastX,measurementCanvasState.lastY);ctx.lineTo(p.x,p.y);ctx.stroke();
+      measurementCanvasState.lastX=p.x;measurementCanvasState.lastY=p.y;
+    }
+  };
+  const end=e=>{
+    if(!measurementCanvasState.drawing)return;measurementCanvasState.drawing=false;
+    if(measurementCanvasState.tool==="line"){
+      const p=pos(e.changedTouches?{touches:[e.changedTouches[0]]}:e);
+      ctx.strokeStyle="#111";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(measurementCanvasState.startX,measurementCanvasState.startY);ctx.lineTo(p.x,p.y);ctx.stroke();
+    }
+  };
+  canvas.addEventListener("mousedown",start);canvas.addEventListener("mousemove",move);window.addEventListener("mouseup",end);
+  canvas.addEventListener("touchstart",start,{passive:false});canvas.addEventListener("touchmove",move,{passive:false});canvas.addEventListener("touchend",end,{passive:false});
+}
+function measurementCanvasClear(){
+  const c=document.getElementById("measurementCanvas");if(!c)return;
+  c.dataset.ready="";initMeasurementCanvas();
+}
+async function saveMeasurementSketch(){
+  const canvas=document.getElementById("measurementCanvas");if(!canvas)return;
+  const id=await ensureMeasurementDraft();if(!id)return;
+  const blob=await new Promise(r=>canvas.toBlob(r,"image/png",0.95));
+  const name=`croqui_${measurementDraft.data.code}_${Date.now()}.png`;
+  const path=`${profile.company_id}/measurements/${id}/${name}`;
+  const {error}=await sb.storage.from("crm-documents").upload(path,blob,{contentType:"image/png"});
+  if(error)return toast("Erro ao salvar croqui: "+error.message);
+  measurementDraft.attachments.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),name,path,type:"image/png",size:blob.size,category:"Croqui",uploaded_at:new Date().toISOString()});
+  await saveMeasurement("Rascunho",true);toast("Croqui salvo nos arquivos da medição");
+}
+async function saveMeasurement(statusOverride="",silent=false){
+  measurementSyncGeneral();
+  if(!measurementDraft.client_id){if(!silent)toast("Selecione o cliente");return false}
+  if(statusOverride)measurementDraft.data.status=statusOverride;
+  const historyAction=statusOverride==="Concluída"?"Medição finalizada":"Medição salva";
+  const last=measurementDraft.data.history.at(-1);
+  if(!last||last.action!==historyAction||Date.now()-new Date(last.at).getTime()>30000)
+    measurementDraft.data.history.push({at:new Date().toISOString(),action:historyAction,user:profile.name});
+  const payload={
+    company_id:profile.company_id,
+    client_id:measurementDraft.client_id||null,
+    proposal_id:measurementDraft.proposal_id||null,
+    environments:measurementDraft.data.environments.map(e=>e.name).filter(Boolean),
+    measurements:measurementDraft.data,
+    attachments:measurementDraft.attachments,
+    measured_at:new Date(measurementDraft.measured_at+"T12:00:00").toISOString(),
+    responsible_id:session.user.id,
+    notes:measurementDraft.data.general_notes||null
+  };
+  let error,data;
+  if(measurementDraft.id){
+    ({error}=await sb.from("measurements").update(payload).eq("id",measurementDraft.id));
+  }else{
+    ({data,error}=await sb.from("measurements").insert(payload).select("id").single());
+    if(data?.id){measurementDraft.id=data.id;measurementEditorId=data.id}
+  }
+  if(error){if(!silent)toast("Erro ao salvar: "+error.message);return false}
+  if(!silent)toast(statusOverride==="Concluída"?"Medição finalizada com sucesso":"Rascunho salvo na nuvem");
+  if(statusOverride==="Concluída"){measurementEditorId=null;measurementDraft=null}
+  await refreshCore();render();return true;
+}
+async function deleteMeasurement(id){
+  const x=measurementById(id);if(!x)return;
+  if(!confirm(`Excluir ${measurementCode(x)}? Os arquivos vinculados também serão removidos.`))return;
+  const paths=measurementAttachments(x).map(a=>a.path).filter(Boolean);
+  if(paths.length)await sb.storage.from("crm-documents").remove(paths);
+  const {error}=await sb.from("measurements").delete().eq("id",id);
+  if(error)return toast("Erro: "+error.message);
+  toast("Medição excluída");render();
+}
+function viewMeasurement(id){editMeasurement(id)}
+function measurementHistoryHTML(){
+  const h=measurementDraft.data.history||[];
+  return `<div class="measurement-history">${[...h].reverse().map(x=>`<div class="measurement-history-row"><span class="measurement-history-dot"></span><div><b>${esc(x.action)}</b><span>${new Date(x.at).toLocaleString("pt-BR")} • ${esc(x.user||"Sistema")}</span></div></div>`).join("")||`<div class="empty">Histórico ainda vazio.</div>`}</div>`;
+}
+function measurementEditor(){
+  if(!measurementDraft)measurementDraft=measurementBuildDraft(measurementEditorId?measurementById(measurementEditorId):{});
+  const d=measurementDraft.data;
+  const c=measurementClient(measurementDraft.client_id);
+  const p=measurementProposal(measurementDraft.proposal_id);
+  setTimeout(()=>{measurementSwitchTab(measurementTab);if(measurementTab==="croqui")initMeasurementCanvas()},0);
+  return `<div class="measurement-pro-shell">
+    <div class="measurement-pro-header">
+      <div class="measurement-title-wrap"><button class="measurement-back" onclick="closeMeasurementEditor()">←</button><div><div class="measurement-version">V6.9 • MEDIÇÕES PRO</div><h1>Medições Técnicas PRO</h1><p>Registre medidas, ambientes, fotos, plantas, croquis e pontos técnicos em um único lugar.</p></div></div>
+      <div class="measurement-header-actions"><button class="btn" onclick="saveMeasurement('Rascunho')">Salvar Rascunho</button><button class="btn gold" onclick="saveMeasurement('Concluída')">✓ Finalizar Medição</button></div>
+    </div>
+
+    <div class="measurement-top-summary">
+      <div><span>Código</span><b>${esc(d.code)}</b></div>
+      <div><span>Cliente</span><b>${esc(c?.name||"Não selecionado")}</b></div>
+      <div><span>Projeto</span><b>${esc(p?.title||"Sem proposta")}</b></div>
+      <div><span>Status</span><b><span class="badge ${measurementStatusClass(d.status)}">${esc(d.status)}</span></b></div>
+      <div><span>Ambientes</span><b>${d.environments.length}</b></div>
+      <div><span>Arquivos</span><b>${measurementDraft.attachments.length}</b></div>
+    </div>
+
+    <div class="measurement-tabs">
+      ${[["dados","▤","Dados Gerais"],["ambientes","▦","Ambientes"],["arquivos","▣","Fotos & Arquivos"],["croqui","✎","Croqui & Medidas"],["checklist","✓","Checklist Técnico"],["observacoes","≡","Observações"],["historico","◷","Histórico"]].map(([id,ic,l])=>`<button class="measurement-tab ${measurementTab===id?"active":""}" data-tab="${id}" onclick="measurementSwitchTab('${id}')"><span>${ic}</span>${l}</button>`).join("")}
+    </div>
+
+    <div class="measurement-panel ${measurementTab==="dados"?"active":""}" data-panel="dados">
+      <div class="measurement-main-grid">
+        <div class="card pad">
+          <div class="measurement-section-title"><h2>Dados da Medição</h2><span>Identificação do atendimento técnico</span></div>
+          <div class="form-grid">
+            <div class="field"><label>Cliente *</label><select id="measureClient" onchange="measurementRefreshProposalSelect()"><option value="">Selecione um cliente...</option>${measurementClientOptions(measurementDraft.client_id)}</select></div>
+            <div class="field"><label>Código da medição</label><input value="${esc(d.code)}" disabled></div>
+            <div class="field"><label>Projeto / Proposta</label><select id="measureProposal" onchange="measurementSyncGeneral()"><option value="">Sem proposta vinculada</option>${measurementProposalOptions(measurementDraft.proposal_id,measurementDraft.client_id)}</select></div>
+            <div class="field"><label>Data da medição</label><input id="measureDate" type="date" value="${esc(measurementDraft.measured_at)}" onchange="measurementSyncGeneral()"></div>
+            <div class="field full"><label>Endereço da medição</label><input id="measureAddress" value="${esc(d.address||"")}" placeholder="Rua, número, bairro, cidade..." oninput="measurementSyncGeneral()"></div>
+            <div class="field"><label>Status</label><select id="measureStatus" onchange="measurementSyncGeneral()">${["Rascunho","Pendente","Em andamento","Aguardando projeto","Concluída","Cancelada"].map(s=>`<option ${d.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
+            <div class="field"><label>Responsável técnico</label><input value="${esc(profile.name)}" disabled></div>
+            <div class="field"><label>Equipe</label><select id="measureTeam" onchange="measurementSyncGeneral()">${["Técnico","Projetista","Comercial + Técnico","Montagem","Terceirizado"].map(s=>`<option ${d.team===s?"selected":""}>${s}</option>`).join("")}</select></div>
+          </div>
+        </div>
+        <div class="card pad measurement-start-card">
+          <div class="measurement-section-title"><h2>Fluxo recomendado</h2><span>Reduza retrabalho na fábrica e montagem</span></div>
+          <div class="measurement-flow-step"><b>1</b><div><strong>Dados gerais</strong><span>Cliente, projeto, endereço e responsável.</span></div></div>
+          <div class="measurement-flow-step"><b>2</b><div><strong>Ambientes</strong><span>Cadastre cada cômodo e suas medidas.</span></div></div>
+          <div class="measurement-flow-step"><b>3</b><div><strong>Fotos & arquivos</strong><span>Documente paredes, pontos e interferências.</span></div></div>
+          <div class="measurement-flow-step"><b>4</b><div><strong>Checklist</strong><span>Valide tudo antes de finalizar.</span></div></div>
+          <button class="btn gold full" onclick="measurementSwitchTab('ambientes')">Começar pelos Ambientes →</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="measurement-panel ${measurementTab==="ambientes"?"active":""}" data-panel="ambientes">
+      <div class="measurement-layout">
+        <div class="card pad">${measurementEnvironmentList()}</div>
+        <div class="card pad">${measurementEnvironmentEditor()}</div>
+        <div class="card pad">${measurementQuickPanel()}</div>
+      </div>
+    </div>
+
+    <div class="measurement-panel ${measurementTab==="arquivos"?"active":""}" data-panel="arquivos">
+      <div class="measurement-files-grid">
+        <div class="card pad"><div class="measurement-section-title"><h2>Fotos & Arquivos</h2><span>Upload técnico multiformato</span></div>${measurementUploadArea()}</div>
+        <div class="card pad"><div class="measurement-section-title"><h2>Arquivos vinculados</h2><span>${measurementDraft.attachments.length} arquivo(s)</span></div><div class="measurement-file-list">${measurementAttachmentCards()}</div></div>
+      </div>
+      <div class="measurement-photo-guide">
+        ${[["📷","Visão geral","Fotografe o ambiente inteiro."],["⚡","Elétrica","Tomadas, interruptores e saídas."],["💧","Hidráulica","Água, esgoto e registros."],["▣","Vãos","Portas, janelas e passagens."],["⚠","Interferências","Tubos, vigas, pilares e recortes."],["📐","Planta","Anexe plantas, DWG, DXF ou PDF."]].map(([ic,t,s])=>`<div class="measurement-guide-card"><b>${ic}</b><strong>${t}</strong><span>${s}</span></div>`).join("")}
+      </div>
+    </div>
+
+    <div class="measurement-panel ${measurementTab==="croqui"?"active":""}" data-panel="croqui">
+      <div class="measurement-croqui-grid">
+        <div class="card pad"><div class="measurement-section-title"><h2>Croqui e Anotações</h2><span>Desenho rápido para apoio da medição</span></div>${measurementCanvasHTML()}</div>
+        <div class="card pad">${measurementQuickPanel()}</div>
+      </div>
+    </div>
+
+    <div class="measurement-panel ${measurementTab==="checklist"?"active":""}" data-panel="checklist">
+      <div class="card pad"><div class="measurement-section-title"><h2>Checklist Técnico de Conferência</h2><span>Itens essenciais antes de liberar o projeto</span></div>${measurementChecklist()}</div>
+    </div>
+
+    <div class="measurement-panel ${measurementTab==="observacoes"?"active":""}" data-panel="observacoes">
+      <div class="card pad"><div class="measurement-section-title"><h2>Observações Gerais</h2><span>Registre tudo que pode afetar projeto, produção ou instalação</span></div>
+        <div class="field"><label>Observações técnicas</label><textarea id="measureGeneralNotes" rows="14" oninput="measurementSyncGeneral()" placeholder="Ex.: parede fora de prumo, cliente ainda fará troca de piso, ponto hidráulico será deslocado, eletrodoméstico ainda não comprado...">${esc(d.general_notes||"")}</textarea></div>
+      </div>
+    </div>
+
+    <div class="measurement-panel ${measurementTab==="historico"?"active":""}" data-panel="historico">
+      <div class="card pad"><div class="measurement-section-title"><h2>Histórico da Medição</h2><span>Registro cronológico de alterações</span></div>${measurementHistoryHTML()}</div>
+    </div>
+
+    <div class="measurement-footer-actions"><button class="btn" onclick="closeMeasurementEditor()">Cancelar</button><div><button class="btn" onclick="saveMeasurement('Rascunho')">Salvar Rascunho</button><button class="btn gold" onclick="saveMeasurement('Concluída')">✓ Finalizar Medição</button></div></div>
+  </div>`;
+}
+function medicoes(){
+  if(measurementDraft||measurementEditorId)return measurementEditor();
+  const total=cache.measurements.length;
+  const andamento=cache.measurements.filter(x=>["Em andamento","Rascunho"].includes(measurementStatus(x))).length;
+  const aguardando=cache.measurements.filter(x=>measurementStatus(x)==="Aguardando projeto").length;
+  const concluidas=cache.measurements.filter(x=>measurementStatus(x)==="Concluída").length;
+  const arquivos=cache.measurements.reduce((a,x)=>a+measurementAttachments(x).length,0);
+  const rows=cache.measurements.map(x=>{
+    const c=measurementClient(x.client_id),p=measurementProposal(x.proposal_id),d=measurementData(x),envs=x.environments||[];
+    return `<tr>
+      <td><button class="link-client" onclick="editMeasurement('${x.id}')"><b>${esc(measurementCode(x))}</b></button><small>${measurementFormatDate(x.measured_at)}</small></td>
+      <td><b>${esc(c?.name||"Cliente não vinculado")}</b><small>${esc(p?.title||d.address||"Sem proposta")}</small></td>
+      <td>${envs.length?esc(envs.slice(0,3).join(" • ")):"—"}${envs.length>3?`<small>+${envs.length-3} ambiente(s)</small>`:""}</td>
+      <td><span class="badge ${measurementStatusClass(measurementStatus(x))}">${esc(measurementStatus(x))}</span></td>
+      <td>${measurementAttachments(x).length}</td>
+      <td><div class="row-actions"><button class="btn sm gold" onclick="editMeasurement('${x.id}')">Abrir</button><button class="btn sm danger" onclick="deleteMeasurement('${x.id}')">Excluir</button></div></td>
+    </tr>`;
+  }).join("");
+  return shell("Medições Técnicas PRO","Medição de campo completa com ambientes, fotos, croquis, checklist e arquivos técnicos",
+    `<button class="btn gold" onclick="startMeasurement()">+ Nova Medição</button>`,
+    `<div class="measurement-list-hero">
+      <div><span class="measurement-version">V6.9 • MEDIÇÕES PRO</span><h2>Precisão na medição. Segurança na produção.</h2><p>Centralize tudo que o projetista, a fábrica e a montagem precisam saber antes de produzir.</p></div>
+      <div class="measurement-list-hero-actions"><button class="btn" onclick="toast('Use o botão Nova Medição para iniciar um atendimento técnico')">Guia rápido</button><button class="btn gold" onclick="startMeasurement()">+ Nova Medição</button></div>
+    </div>
+    <div class="grid g5 measurement-kpis">
+      <div class="card kpi"><label>Medições realizadas</label><strong>${total}</strong></div>
+      <div class="card kpi"><label>Em andamento</label><strong class="goldtxt">${andamento}</strong></div>
+      <div class="card kpi"><label>Aguardando projeto</label><strong>${aguardando}</strong></div>
+      <div class="card kpi"><label>Concluídas</label><strong>${concluidas}</strong></div>
+      <div class="card kpi"><label>Arquivos técnicos</label><strong>${arquivos}</strong></div>
+    </div>
+    <div class="filters"><div class="field"><label>Buscar medição</label><input placeholder="Código, cliente, proposta, ambiente..." oninput="filterTable(this.value)"></div></div>
+    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Nº / Data</th><th>Cliente / Projeto</th><th>Ambientes</th><th>Status</th><th>Arquivos</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="6">Nenhuma medição cadastrada. Clique em + Nova Medição.</td></tr>`}</tbody></table></div></div>`);
+}
 function compras(){return simpleTable("Compras","Módulo conectado na próxima expansão","",["Fornecedor","Valor","Status","Ações"],[])}
 function templates(){return simpleTable("Templates de Documentos","Módulo conectado na próxima expansão","",["Nome","Tipo","Ações"],[])}
 function kanban(){return shell("Kanban de Produção","Estrutura do banco já preparada para production_projects","",`<div class="pipeline" style="grid-template-columns:repeat(5,minmax(190px,1fr))">${["Orçado","Aprovado / Medição","Em Produção","Em Montagem","Entregue"].map(s=>`<div class="stage"><div class="stage-head">${s}<b class="goldtxt">0</b></div></div>`).join("")}</div>`)}
