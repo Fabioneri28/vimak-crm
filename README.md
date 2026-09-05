@@ -248,3 +248,9 @@ O objetivo é maximizar o reaproveitamento; 100% físico não é garantível dev
 
 ### Segurança
 Para produção SaaS, tokens Cortecloud devem ficar em backend/Edge Function, nunca em repositório público ou JavaScript do navegador.
+
+
+### Hotfix V6.15.1
+- Corrigido roteamento de `#cortecloud`: a rota agora renderiza o dashboard completo da Integração Cortecloud.
+- Restaurada `cutSources()` do SmartCut V6.13.
+- Cache do Service Worker renovado para publicação limpa.
