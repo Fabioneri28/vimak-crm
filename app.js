@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],measurements:[],purchaseOrders:[],purchaseOrderItems:[],documentTemplates:[],productionProjects:[],cuttingPlans:[],sheetRemnants:[],integrations:[],installationTeams:[],installationSchedule:[],leadActivities:[],leadTasks:[],leadExtrasLoaded:false,leadExtrasError:"",costCenters:[],bankAccounts:[],accountsReceivable:[],accountsPayable:[],invoices:[],cardMachines:[],cardMachineRates:[],cardTransactions:[],cardSettlements:[],financeBudgets:[],financeBudgetItems:[],financeTransactions:[],financeApprovals:[],financeEntities:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],measurements:[],purchaseOrders:[],purchaseOrderItems:[],documentTemplates:[],productionProjects:[],cuttingPlans:[],sheetRemnants:[],integrations:[],installationTeams:[],installationSchedule:[],costCenters:[],bankAccounts:[],accountsReceivable:[],accountsPayable:[],invoices:[],cardMachines:[],financeBudgets:[],financeBudgetItems:[],financeTransactions:[],financeApprovals:[],financeEntities:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -30,71 +30,67 @@ function simpleTable(title,sub,button,headers,rows){return shell(title,sub,butto
 function filterTable(q){q=q.toLowerCase();document.querySelectorAll("#rows tr").forEach(r=>r.style.display=r.innerText.toLowerCase().includes(q)?"":"none")}
 
 async function init(){
-  const {data:{session:s},error}=await sb.auth.getSession();
-  if(error) console.error("getSession:",error);
-
+  const {data:{session:s}} = await sb.auth.getSession();
   if(s){
     session=s;
     const ok=await loadIdentity();
     if(ok) showApp(); else showAuth();
-  } else {
-    showAuth();
-  }
+  } else showAuth();
 
-  // Não faz await de consultas Supabase dentro do callback do Auth.
-  sb.auth.onAuthStateChange((_event,s2)=>{
-    setTimeout(async ()=>{
-      session=s2;
-      if(session){
-        const ok=await loadIdentity();
-        if(ok) showApp(); else showAuth();
-      }else{
-        profile=null; company=null; showAuth();
-      }
-    },0);
+  sb.auth.onAuthStateChange(async (_event,s2)=>{
+    session=s2;
+    if(session){
+      const ok=await loadIdentity();
+      if(ok) showApp(); else showAuth();
+    } else showAuth();
   });
 }
 function showAuth(){authScreen.classList.remove("hidden");appShell.classList.add("hidden")}
 function showApp(){authScreen.classList.add("hidden");appShell.classList.remove("hidden");syncChrome();render()}
 async function login(e){
   e.preventDefault();
-  const emailEl=document.getElementById("loginEmail");
-  const passEl=document.getElementById("loginPassword");
-  const form=document.getElementById("loginForm");
-  const button=form.querySelector('button[type="submit"]');
-  const status=document.getElementById("loginStatus");
-  const email=emailEl.value.trim(), password=passEl.value;
 
-  if(!email||!password){
-    status.style.display="grid";
-    status.innerHTML="<b>Preencha e-mail e senha.</b>";
+  const emailEl = document.getElementById("loginEmail");
+  const passEl = document.getElementById("loginPassword");
+  const form = document.getElementById("loginForm");
+  const button = form.querySelector('button[type="submit"]');
+  const status = document.getElementById("loginStatus");
+
+  const email = emailEl.value.trim();
+  const password = passEl.value;
+
+  if(!email || !password){
+    status.style.display = "grid";
+    status.innerHTML = "<b>Preencha e-mail e senha.</b>";
     return;
   }
 
-  button.disabled=true;
-  button.textContent="Entrando...";
-  status.style.display="grid";
-  status.innerHTML="<span>Conectando ao Supabase...</span>";
+  button.disabled = true;
+  button.textContent = "Entrando...";
+  status.style.display = "grid";
+  status.innerHTML = "<span>Conectando ao Supabase...</span>";
 
   try{
     const {data,error}=await sb.auth.signInWithPassword({email,password});
-    if(error) throw error;
-    if(!data?.session) throw new Error("Sessão não retornada pelo Supabase.");
 
-    session=data.session;
-    status.innerHTML="<b>Login realizado.</b><span>Carregando sua empresa...</span>";
+    if(error){
+      status.innerHTML = `<b>Não foi possível entrar</b><span>${esc(error.message)}</span>`;
+      return;
+    }
 
-    const ok=await loadIdentity();
-    if(!ok) return;
+    if(!data.session){
+      status.innerHTML = "<b>Login não concluído</b><span>O Supabase não retornou uma sessão válida.</span>";
+      return;
+    }
 
-    showApp();
+    status.innerHTML = "<b>Login realizado.</b><span>Carregando sua empresa...</span>";
     toast("Login realizado com sucesso");
   }catch(err){
-    console.error("login:",err);
-    status.innerHTML=`<b>Não foi possível entrar</b><span>${esc(err.message||"Falha inesperada")}</span>`;
+    console.error(err);
+    status.innerHTML = `<b>Erro de conexão</b><span>${esc(err.message || "Falha inesperada")}</span>`;
   }finally{
-    button.disabled=false;
-    button.textContent="Entrar no VIMAK CRM";
+    button.disabled = false;
+    button.textContent = "Entrar no VIMAK CRM";
   }
 }
 async function logout(){await sb.auth.signOut();toast("Sessão encerrada")}
@@ -152,7 +148,7 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p,pi,pm,m,po,poi,dt,pp,cp,sr,integ,it,isched,cc,ba,ar,ap,inv,cm,cmr,ctx,cst,fb,fbi,ft,fa,fe,s,pa,as,i]=await Promise.all([
+  const [c,l,p,pi,pm,m,po,poi,dt,pp,cp,sr,integ,it,isched,cc,ba,ar,ap,inv,cm,fb,fbi,ft,fa,fe,s,pa,as,i]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
     sb.from("proposals").select("*").order("created_at",{ascending:false}),
@@ -174,9 +170,6 @@ async function refreshCore(){
     sb.from("accounts_payable").select("*").order("due_date",{ascending:true}),
     sb.from("invoices").select("*").order("created_at",{ascending:false}),
     sb.from("card_machines").select("*").order("created_at",{ascending:false}),
-    sb.from("card_machine_rates").select("*").order("installments",{ascending:true}),
-    sb.from("card_transactions").select("*").order("sold_at",{ascending:false}),
-    sb.from("card_settlements").select("*").order("expected_at",{ascending:false}),
     sb.from("finance_budgets").select("*").order("year",{ascending:false}),
     sb.from("finance_budget_items").select("*").order("created_at",{ascending:false}),
     sb.from("finance_transactions").select("*").order("transaction_date",{ascending:false}),
@@ -208,9 +201,6 @@ async function refreshCore(){
   cache.accountsPayable=ap.data||[];
   cache.invoices=inv.data||[];
   cache.cardMachines=cm.data||[];
-  cache.cardMachineRates=cmr.data||[];
-  cache.cardTransactions=ctx.data||[];
-  cache.cardSettlements=cst.data||[];
   cache.financeBudgets=fb.data||[];
   cache.financeBudgetItems=fbi.data||[];
   cache.financeTransactions=ft.data||[];
@@ -234,90 +224,10 @@ function dashboard(){
  return shell("Dashboard","Dados reais de "+company.name,`<button class="btn gold" onclick="addLead()">+ Novo Lead</button>`,
  `<div class="grid g4"><div class="card kpi"><label>Faturamento potencial</label><strong class="goldtxt">${money(total)}</strong></div><div class="card kpi"><label>Propostas</label><strong>${cache.proposals.length}</strong></div><div class="card kpi"><label>Leads</label><strong>${cache.leads.length}</strong></div><div class="card kpi"><label>Clientes</label><strong>${cache.clients.length}</strong></div></div><div class="section">Status da nuvem</div><div class="notice">Supabase conectado • PostgreSQL ativo • Auth real • RLS multiempresa ativo</div>`);
 }
-let leadView='pipeline',leadSearch='',leadOwner='todos',leadSource='todos',leadTemp='todos';
-const leadStages=['Entrada','Qualificação','Construção de Valor','Pré-compromisso','Apresentação','Fechamento','Pós-venda'];
-
-function ldMeta(x){return x.metadata||{}}
-function ldActivities(id){return cache.leadActivities.filter(x=>x.lead_id===id)}
-function ldTasks(id){return cache.leadTasks.filter(x=>x.lead_id===id)}
-function ldStage(x){return x.stage||x.status||'Entrada'}
-function ldTemp(x){return x.temperature||ldMeta(x).temperature||'Morno'}
-function ldSource(x){return x.source||x.channel||x.canal_entrada||'Não informado'}
-function ldOwner(x){return x.owner_name||ldMeta(x).owner_name||'Sem responsável'}
-function ldValue(x){return Number(x.estimated_value||x.estimated_investment||ldMeta(x).estimated_value||0)}
-function ldProbability(x){let p=Number(x.probability||ldMeta(x).probability||0);if(p)return p;return {'Entrada':10,'Qualificação':20,'Construção de Valor':35,'Pré-compromisso':50,'Apresentação':65,'Fechamento':85,'Pós-venda':100}[ldStage(x)]||10}
-function ldDaysSince(v){if(!v)return 999;return Math.max(0,Math.floor((Date.now()-new Date(v))/86400000))}
-function ldLastContact(x){return x.last_contact_at||ldMeta(x).last_contact_at||ldActivities(x.id)[0]?.created_at||x.created_at}
-function ldScore(x){let manual=Number(x.score||ldMeta(x).score||0);if(manual)return Math.max(0,Math.min(100,manual));let s=20,i=leadStages.indexOf(ldStage(x));s+=Math.max(0,i)*9;if(x.whatsapp||x.phone||x.telefone)s+=8;if(x.email)s+=5;if(ldValue(x)>0)s+=8;if(['Quente','Muito quente'].includes(ldTemp(x)))s+=12;if(ldDaysSince(ldLastContact(x))<=2)s+=8;if(ldDaysSince(ldLastContact(x))>7)s-=12;return Math.max(0,Math.min(100,s))}
-function ldScoreClass(v){return v>=75?'hot':v>=50?'warm':'cold'}
-function ldPhone(x){return x.whatsapp||x.phone||x.telefone||''}
-function ldName(x){return x.name||x.nome||'Lead'}
-function ldFiltered(){return cache.leads.filter(x=>{let q=leadSearch.toLowerCase(),m=ldMeta(x);return (!q||[ldName(x),ldPhone(x),x.email,ldSource(x),m.city,m.project_type].some(v=>String(v||'').toLowerCase().includes(q)))&&(leadOwner==='todos'||ldOwner(x)===leadOwner)&&(leadSource==='todos'||ldSource(x)===leadSource)&&(leadTemp==='todos'||ldTemp(x)===leadTemp)})}
-function ldSetView(v){leadView=v;render()} function ldSetSearch(v){leadSearch=v;render()} function ldSetOwner(v){leadOwner=v;render()} function ldSetSource(v){leadSource=v;render()} function ldSetTemp(v){leadTemp=v;render()}
-
-async function ldLoadExtras(){
-  if(cache.leadExtrasLoaded) return true;
-  try{
-    const [a,t]=await Promise.all([
-      sb.from("lead_activities").select("*").order("created_at",{ascending:false}),
-      sb.from("lead_tasks").select("*").order("due_at",{ascending:true})
-    ]);
-    if(a.error||t.error) throw new Error(a.error?.message||t.error?.message);
-    cache.leadActivities=a.data||[];
-    cache.leadTasks=t.data||[];
-    cache.leadExtrasLoaded=true;
-    cache.leadExtrasError="";
-    if(page==="leads") render();
-    return true;
-  }catch(err){
-    console.error("Lead extras:",err);
-    cache.leadExtrasLoaded=true;
-    cache.leadExtrasError=err.message||"Migration 007 ainda não aplicada";
-    if(page==="leads") render();
-    return false;
-  }
-}
-
-function ldPipeline(){
-  let arr=ldFiltered();
-  return `<div class="ld-pipeline">${leadStages.map(stage=>{
-    let rows=arr.filter(x=>ldStage(x)===stage),sum=rows.reduce((a,x)=>a+ldValue(x),0);
-    return `<section class="ld-column"><header><div><span>${rows.length}</span><b>${stage}</b></div><strong>${money(sum)}</strong></header><div class="ld-column-body">${rows.map(x=>ldCard(x)).join('')||'<div class="ld-empty-stage">Sem leads</div>'}</div></section>`
-  }).join('')}</div>`
-}
-function ldCard(x){let sc=ldScore(x),days=ldDaysSince(ldLastContact(x));return `<article class="ld-card" onclick="ldView('${x.id}')"><div class="ld-card-top"><span class="ld-temp ${ldTemp(x).toLowerCase().replace(' ','-')}">${esc(ldTemp(x))}</span><b class="${ldScoreClass(sc)}">${sc}</b></div><h3>${esc(ldName(x))}</h3><p>${esc((x.environments||[]).join(', ')||ldMeta(x).project_type||'Projeto não definido')}</p><div class="ld-card-meta"><span>◉ ${esc(ldSource(x))}</span><span>◷ ${days===0?'Hoje':days+'d'}</span></div><div class="ld-card-value"><span>Potencial</span><b>${money(ldValue(x))}</b><small>${ldProbability(x)}% prob.</small></div></article>`}
-
-function ldAnalytics(){
- let arr=cache.leads,active=arr.filter(x=>ldStage(x)!=='Pós-venda'),weighted=active.reduce((a,x)=>a+ldValue(x)*ldProbability(x)/100,0);
- return `<div class="ld-analytics-grid"><section class="card"><div class="ld-panel-head"><div><span>FUNIL</span><h3>Distribuição comercial</h3></div></div><div class="ld-funnel">${leadStages.map(st=>{let n=arr.filter(x=>ldStage(x)===st).length;return `<div><b>${st}</b><strong>${n}</strong></div>`}).join('')}</div></section><section class="card"><div class="ld-panel-head"><div><span>FORECAST</span><h3>Pipeline ponderado</h3></div><b>${money(weighted)}</b></div><div class="notice">Forecast = valor potencial × probabilidade de fechamento.</div></section><section class="card"><div class="ld-panel-head"><div><span>ATENÇÃO</span><h3>Leads sem contato</h3></div></div>${arr.filter(x=>ldDaysSince(ldLastContact(x))>7&&ldStage(x)!=='Pós-venda').slice(0,8).map(x=>`<button class="btn" onclick="ldView('${x.id}')">${esc(ldName(x))} • ${ldDaysSince(ldLastContact(x))}d</button>`).join('')||'<div class="empty">Nenhum lead crítico.</div>'}</section></div>`
-}
-
-function ldList(){
- let arr=ldFiltered();
- return `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Lead</th><th>Etapa</th><th>Score</th><th>Origem</th><th>Responsável</th><th>Potencial</th><th></th></tr></thead><tbody>${arr.map(x=>`<tr><td><b>${esc(ldName(x))}</b><small>${esc(ldPhone(x))}</small></td><td>${esc(ldStage(x))}</td><td><b class="${ldScoreClass(ldScore(x))}">${ldScore(x)}</b></td><td>${esc(ldSource(x))}</td><td>${esc(ldOwner(x))}</td><td>${money(ldValue(x))}</td><td><button class="btn sm gold" onclick="ldView('${x.id}')">Abrir</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">Nenhum lead.</td></tr>'}</tbody></table></div></div>`
-}
-
-function ldView(id){
- let x=cache.leads.find(v=>v.id===id); if(!x)return;
- let acts=ldActivities(id),tasks=ldTasks(id);
- openModal(ldName(x),`<div class="ld-detail"><div class="ld-detail-hero"><div><span class="ld-temp">${esc(ldTemp(x))}</span><h2>${esc(ldName(x))}</h2><p>${esc(ldPhone(x)||'Sem telefone')} • ${esc(x.email||'Sem e-mail')}</p></div><div class="ld-score-ring ${ldScoreClass(ldScore(x))}"><strong>${ldScore(x)}</strong><span>LEAD SCORE</span></div></div><div class="ld-detail-kpis"><div><span>Etapa</span><b>${esc(ldStage(x))}</b></div><div><span>Potencial</span><b>${money(ldValue(x))}</b></div><div><span>Probabilidade</span><b>${ldProbability(x)}%</b></div><div><span>Forecast</span><b>${money(ldValue(x)*ldProbability(x)/100)}</b></div></div><div class="ld-detail-actions"><button class="btn gold" onclick="ldWhatsApp('${id}')">WhatsApp</button><button class="btn" onclick="ldAddActivity('${id}')">+ Interação</button><button class="btn" onclick="ldAddTask('${id}')">+ Próxima ação</button></div><div class="ld-detail-grid"><section><h3>Próximas ações</h3>${tasks.map(t=>`<div class="notice"><b>${esc(t.title)}</b><br>${new Date(t.due_at).toLocaleString('pt-BR')}</div>`).join('')||'<div class="empty">Sem tarefas.</div>'}</section><section><h3>Histórico comercial</h3>${acts.map(a=>`<div class="notice"><b>${esc(a.title||a.type)}</b><br>${esc(a.description||'')}</div>`).join('')||'<div class="empty">Sem interações.</div>'}</section></div></div>`,'')
-}
-function ldWhatsApp(id){let x=cache.leads.find(v=>v.id===id),p=ldPhone(x).replace(/\D/g,'');if(!p)return toast('Lead sem WhatsApp');window.open(`https://wa.me/55${p}`,'_blank')}
-function ldAddActivity(id){if(cache.leadExtrasError)return toast('Execute a migration 007 no Supabase');openModal('Registrar Interação',`<div class="field"><label>Resumo</label><textarea id="ldaDesc"></textarea></div>`,`ldSaveActivity('${id}')`)}
-async function ldSaveActivity(id){let d=ldaDesc.value.trim();if(!d)return toast('Descreva a interação');let r=await sb.from('lead_activities').insert({company_id:profile.company_id,lead_id:id,type:'Contato',title:'Contato',description:d,created_by:session.user.id});if(r.error)return toast('Erro: '+r.error.message);closeModal();cache.leadExtrasLoaded=false;await ldLoadExtras()}
-function ldAddTask(id){if(cache.leadExtrasError)return toast('Execute a migration 007 no Supabase');openModal('Nova Próxima Ação',`<div class="form-grid"><div class="field full"><label>Tarefa</label><input id="ldtTitle"></div><div class="field"><label>Quando</label><input id="ldtDue" type="datetime-local"></div></div>`,`ldSaveTask('${id}')`)}
-async function ldSaveTask(id){if(!ldtTitle.value.trim()||!ldtDue.value)return toast('Preencha tarefa e data');let r=await sb.from('lead_tasks').insert({company_id:profile.company_id,lead_id:id,title:ldtTitle.value.trim(),due_at:new Date(ldtDue.value).toISOString(),status:'Pendente',created_by:session.user.id});if(r.error)return toast('Erro: '+r.error.message);closeModal();cache.leadExtrasLoaded=false;await ldLoadExtras()}
-
 function leads(){
- if(!cache.leadExtrasLoaded) setTimeout(ldLoadExtras,0);
- let arr=cache.leads,active=arr.filter(x=>!['Pós-venda','Perdido','Cancelado'].includes(ldStage(x))),pipeline=active.reduce((a,x)=>a+ldValue(x),0),weighted=active.reduce((a,x)=>a+ldValue(x)*ldProbability(x)/100,0),hot=active.filter(x=>ldScore(x)>=75).length,stale=active.filter(x=>ldDaysSince(ldLastContact(x))>7).length,owners=[...new Set(arr.map(ldOwner))],sources=[...new Set(arr.map(ldSource))];
-
- return shell('Leads & CRM Intelligence','Pipeline, Lead Score, follow-up, forecast e inteligência comercial 360°',`<button class="btn" onclick="ldSetView('analytics')">◈ Inteligência</button><button class="btn gold" onclick="addLead()">+ Novo Lead</button>`,
- `<div class="ld-command"><div><span class="measurement-version">V6.20.3 • SALES INTELLIGENCE</span><h2>Central Comercial VIMAK</h2><p>Do primeiro contato ao fechamento, sem afetar o carregamento dos demais módulos.</p></div></div>
- ${cache.leadExtrasError?`<div class="notice"><b>CRM avançado aguardando migration 007.</b> O sistema principal continua funcionando normalmente. Detalhe: ${esc(cache.leadExtrasError)}</div>`:''}
- <div class="grid g4 proposal-kpis"><div class="card kpi"><label>Pipeline ativo</label><strong>${money(pipeline)}</strong></div><div class="card kpi"><label>Forecast ponderado</label><strong class="goldtxt">${money(weighted)}</strong></div><div class="card kpi"><label>Leads quentes</label><strong class="green">${hot}</strong></div><div class="card kpi"><label>Sem contato +7d</label><strong class="${stale?'red':''}">${stale}</strong></div></div>
- <div class="ld-toolbar"><div class="ld-views"><button class="${leadView==='pipeline'?'active':''}" onclick="ldSetView('pipeline')">▦ Pipeline</button><button class="${leadView==='analytics'?'active':''}" onclick="ldSetView('analytics')">◈ Inteligência</button><button class="${leadView==='lista'?'active':''}" onclick="ldSetView('lista')">☷ Lista</button></div><div class="ld-filters"><input value="${esc(leadSearch)}" placeholder="Buscar lead..." oninput="ldSetSearch(this.value)"><select onchange="ldSetOwner(this.value)"><option value="todos">Todos responsáveis</option>${owners.map(v=>`<option>${esc(v)}</option>`).join('')}</select><select onchange="ldSetSource(this.value)"><option value="todos">Todas origens</option>${sources.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div></div>
- ${leadView==='pipeline'?ldPipeline():leadView==='analytics'?ldAnalytics():ldList()}`)
+ const stages=["Entrada","Qualificação","Construção de Valor","Pré-compromisso","Apresentação","Fechamento","Pós-venda"];
+ return shell("Leads & CRM","Pipeline real salvo no Supabase",`<button class="btn gold" onclick="addLead()">+ Novo Lead</button>`,
+ `<div class="pipeline">${stages.map(s=>`<div class="stage"><div class="stage-head">${s}<b class="goldtxt">${cache.leads.filter(x=>x.stage===s).length}</b></div>${cache.leads.filter(x=>x.stage===s).map(x=>`<div class="deal"><b>${esc(x.name)}</b><span>${esc(x.whatsapp||"")}</span><span class="goldtxt">${money(x.estimated_investment)}</span><span>Score ${x.score||0}</span></div>`).join("")||`<div class="empty">Sem leads</div>`}</div>`).join("")}</div>`);
 }
 function addLead(){openModal("Novo Lead",`<div class="form-grid"><div class="field"><label>Nome</label><input id="ln"></div><div class="field"><label>WhatsApp</label><input id="lt"></div><div class="field"><label>Ambiente</label><input id="la"></div><div class="field"><label>Investimento</label><input id="lv" type="number"></div><div class="field"><label>Etapa</label><select id="le">${["Entrada","Qualificação","Construção de Valor","Pré-compromisso","Apresentação","Fechamento","Pós-venda"].map(x=>`<option>${x}</option>`).join("")}</select></div><div class="field"><label>Score</label><input id="ls" type="number" value="50"></div></div>`,`saveLead()`)}
 async function saveLead(){
@@ -2404,33 +2314,8 @@ function financeiro(){let ro=finReceivableOpen().reduce((a,x)=>a+finNum(x.amount
 <div class="grid g4 proposal-kpis"><div class="card kpi"><label>Caixa consolidado</label><strong>${money(bal)}</strong></div><div class="card kpi"><label>Contas a receber</label><strong class="green">${money(ro)}</strong></div><div class="card kpi"><label>Contas a pagar</label><strong class="goldtxt">${money(po)}</strong></div><div class="card kpi"><label>Inadimplência</label><strong class="${over?'red':''}">${money(over)}</strong></div></div>
 <div class="fin-tabs">${tabs.map(x=>`<button class="${finTab===x[0]?'active':''}" onclick="finSetTab('${x[0]}')">${x[1]}</button>`).join('')}</div>
 ${finTab==='cockpit'?finCockpit():finTab==='receber'?finTable('receber'):finTab==='pagar'?finTable('pagar'):finTab==='tesouraria'?finTreasury():finTab==='dre'?finDRE():finTab==='budget'?finBudget():finGovernance()}`)}
-let cmTab='cockpit',cmMachine='todos',cmBrand='Visa/Mastercard';
-function cmM(id){return cache.cardMachines.find(x=>x.id===id)}
-function cmRates(id){return cache.cardMachineRates.filter(x=>x.card_machine_id===id&&x.active!==false)}
-function cmTx(){return cache.cardTransactions.filter(x=>cmMachine==='todos'||x.card_machine_id===cmMachine)}
-function cmMoney(v){return money(Number(v||0))}
-function cmSetTab(v){cmTab=v;render()}
-function cmSetMachine(v){cmMachine=v;render()}
-function cmProvider(x){return x.provider||x.brand||x.name||'Adquirente'}
-function cmRateFor(machine,type,installments=1,brand=cmBrand){let rs=cmRates(machine.id).filter(r=>r.payment_type===type&&Number(r.installments||1)===Number(installments)&&(!r.card_brand||r.card_brand===brand||r.card_brand==='Todas'));return rs.sort((a,b)=>Number(a.rate_pct)-Number(b.rate_pct))[0]}
-function cmSim(machine,amount,type,inst,brand){let r=cmRateFor(machine,type,inst,brand),rate=Number(r?.rate_pct||0),fixed=Number(r?.fixed_fee||0),fee=amount*rate/100+fixed,net=amount-fee;return {machine,r,rate,fixed,fee,net,days:Number(r?.settlement_days||0)}}
-function cmBest(amount,type,inst,brand){return cache.cardMachines.filter(x=>x.active!==false).map(m=>cmSim(m,amount,type,inst,brand)).filter(x=>x.r).sort((a,b)=>b.net-a.net)}
-function cmStats(){let tx=cmTx(),gross=tx.reduce((a,x)=>a+Number(x.gross_amount||0),0),fees=tx.reduce((a,x)=>a+Number(x.fee_amount||0),0),net=tx.reduce((a,x)=>a+Number(x.net_amount||0),0),avg=gross?fees/gross*100:0;return {tx,gross,fees,net,avg}}
-function cmCockpit(){let st=cmStats(),by=cache.cardMachines.map(m=>{let tx=st.tx.filter(x=>x.card_machine_id===m.id),gross=tx.reduce((a,x)=>a+Number(x.gross_amount||0),0),fee=tx.reduce((a,x)=>a+Number(x.fee_amount||0),0);return {m,gross,fee,avg:gross?fee/gross*100:0}}).sort((a,b)=>b.gross-a.gross),pending=cache.cardSettlements.filter(x=>!['Liquidado','Conciliado'].includes(x.status)).reduce((a,x)=>a+Number(x.net_amount||0),0);return `<div class="cm-grid-main"><section class="cm-hero-panel"><div class="cm-head"><div><span>ACQUIRING INTELLIGENCE</span><h3>Custo efetivo por adquirente</h3></div><b>${st.avg.toFixed(2)}% <small>taxa média</small></b></div><div class="cm-provider-bars">${by.map(x=>`<div><header><b>${esc(cmProvider(x.m))}</b><span>${cmMoney(x.gross)} processado</span><strong>${x.avg.toFixed(2)}%</strong></header><i><em style="width:${Math.min(100,x.avg/15*100)}%"></em></i><small>${cmMoney(x.fee)} em taxas</small></div>`).join('')||'<div class="empty">Cadastre as maquininhas e registre vendas para comparar custos.</div>'}</div></section><section class="cm-settlement"><span>AGENDA DE RECEBÍVEIS</span><strong>${cmMoney(pending)}</strong><small>A liquidar / conciliar</small>${[1,7,15,30].map(d=>{let lim=new Date(Date.now()+d*86400000),v=cache.cardSettlements.filter(x=>!['Liquidado','Conciliado'].includes(x.status)&&new Date(x.expected_at)<=lim).reduce((a,x)=>a+Number(x.net_amount||0),0);return `<div><label>D+${d}</label><b>${cmMoney(v)}</b></div>`}).join('')}</section></div><div class="cm-row3"><section class="card"><div class="cm-head"><div><span>SMART ROUTING</span><h3>Qual maquininha usar?</h3></div></div>${cmQuickRouter()}</section><section class="card"><div class="cm-head"><div><span>ECONOMIA</span><h3>Taxas evitáveis</h3></div></div><div class="cm-saving"><b>Motor comparativo ativo</b><p>O simulador usa as taxas cadastradas por adquirente, bandeira, modalidade, parcelas e prazo. Assim a decisão é feita com sua taxa contratada — não com uma tabela genérica.</p></div></section><section class="card"><div class="cm-head"><div><span>CONCILIAÇÃO</span><h3>Controle de liquidação</h3></div></div><div class="cm-controls"><span>✓ Venda bruta</span><span>✓ MDR / taxa efetiva</span><span>✓ Valor líquido</span><span>✓ Data prevista</span><span>✓ NSU / autorização</span><span>✓ Status de conciliação</span></div></section></div>`}
-function cmQuickRouter(){let amount=10000,type='Crédito',inst=10,best=cmBest(amount,type,inst,cmBrand);return `<div class="cm-route-example"><span>EXEMPLO • ${cmMoney(amount)} • ${inst}x</span>${best.slice(0,3).map((x,i)=>`<div class="${i===0?'winner':''}"><b>${i===0?'★ ':''}${esc(cmProvider(x.machine))}</b><strong>${x.rate.toFixed(2)}%</strong><span>Líquido ${cmMoney(x.net)}</span></div>`).join('')||'<p>Cadastre as taxas para ativar o ranking automático.</p>'}<button class="btn gold" onclick="cmSetTab('simulador')">Abrir simulador completo</button></div>`}
-function cmSimulator(){return `<div class="cm-simulator"><section class="card"><div class="cm-head"><div><span>FEE ENGINE</span><h3>Simulador inteligente de venda</h3></div></div><div class="form-grid"><div class="field"><label>Valor da venda</label><input id="cmsAmount" type="number" value="10000" oninput="cmRunSim()"></div><div class="field"><label>Modalidade</label><select id="cmsType" onchange="cmRunSim()"><option>Débito</option><option selected>Crédito</option><option>Pix</option></select></div><div class="field"><label>Parcelas</label><select id="cmsInst" onchange="cmRunSim()">${Array.from({length:12},(_,i)=>`<option ${i===9?'selected':''}>${i+1}</option>`).join('')}</select></div><div class="field"><label>Bandeira</label><select id="cmsBrand" onchange="cmBrand=this.value;cmRunSim()"><option>Visa/Mastercard</option><option>Elo/Amex</option><option>Todas</option></select></div></div><div id="cmSimResults"></div></section><aside class="card"><div class="cm-head"><div><span>PRECIFICAÇÃO</span><h3>Receber líquido desejado</h3></div></div><p class="cm-copy">Compare quanto cobrar quando a taxa for absorvida pela VIMAK ou repassada ao preço comercial.</p><div id="cmPricing"></div></aside></div>`}
-function cmRunSim(){let a=Number(document.getElementById('cmsAmount')?.value||0),t=document.getElementById('cmsType')?.value||'Crédito',i=Number(document.getElementById('cmsInst')?.value||1),b=document.getElementById('cmsBrand')?.value||'Visa/Mastercard',best=cmBest(a,t,i,b),box=document.getElementById('cmSimResults'),price=document.getElementById('cmPricing');if(box)box.innerHTML=`<div class="cm-ranking">${best.map((x,n)=>`<article class="${n===0?'winner':''}"><div><span>${n===0?'MELHOR OPÇÃO':'OPÇÃO '+(n+1)}</span><h3>${esc(cmProvider(x.machine))}</h3></div><div><label>Taxa</label><b>${x.rate.toFixed(2)}%</b></div><div><label>Custo</label><b>${cmMoney(x.fee)}</b></div><div><label>Líquido</label><strong>${cmMoney(x.net)}</strong></div><div><label>Recebimento</label><b>${x.days?`D+${x.days}`:'Conforme plano'}</b></div></article>`).join('')||'<div class="notice">Não há taxa cadastrada para essa combinação. Cadastre em Tabela de Taxas.</div>'}</div>`;if(price)price.innerHTML=best.slice(0,3).map(x=>{let pct=x.rate/100,charge=pct<1?(a+x.fixed)/(1-pct):a;return `<div class="cm-price"><b>${esc(cmProvider(x.machine))}</b><span>Para receber ${cmMoney(a)}</span><strong>Cobrar ${cmMoney(charge)}</strong></div>`}).join('')}
-function cmMachines(){return `<div class="cm-machine-grid">${cache.cardMachines.map(m=>{let rates=cmRates(m.id),tx=cache.cardTransactions.filter(x=>x.card_machine_id===m.id),vol=tx.reduce((a,x)=>a+Number(x.gross_amount||0),0);return `<article><header><div class="cm-machine-icon">▣</div><div><span>ADQUIRENTE</span><h3>${esc(cmProvider(m))}</h3></div><span class="badge ${m.active===false?'bad':'ok'}">${m.active===false?'Inativa':'Ativa'}</span></header><div class="cm-machine-stats"><div><span>Modelo</span><b>${esc(m.model||m.name||'—')}</b></div><div><span>Taxas cadastradas</span><b>${rates.length}</b></div><div><span>Volume registrado</span><b>${cmMoney(vol)}</b></div></div><footer><button class="btn sm" onclick="cmEditMachine('${m.id}')">Configurar</button><button class="btn sm gold" onclick="cmSetTab('taxas')">Taxas</button></footer></article>`}).join('')||'<div class="card empty">Nenhuma maquininha cadastrada.</div>'}</div>`}
-function cmNewMachine(){openModal('Nova Maquininha',`<div class="form-grid"><div class="field"><label>Adquirente *</label><input id="cmmProvider" placeholder="InfinitePay, Mercado Pago, Leozinha..."></div><div class="field"><label>Nome / Modelo</label><input id="cmmModel" placeholder="Smart, Point..."></div><div class="field"><label>Identificação</label><input id="cmmCode" placeholder="POS-01"></div><div class="field"><label>Conta / estabelecimento</label><input id="cmmMerchant"></div><div class="field full"><label>Observações</label><textarea id="cmmNotes"></textarea></div></div>`,`cmSaveMachine()`)}
-function cmEditMachine(id){let m=cmM(id);if(!m)return;openModal('Configurar Maquininha',`<div class="form-grid"><div class="field"><label>Adquirente *</label><input id="cmmProvider" value="${esc(cmProvider(m))}"></div><div class="field"><label>Nome / Modelo</label><input id="cmmModel" value="${esc(m.model||m.name||'')}"></div><div class="field"><label>Identificação</label><input id="cmmCode" value="${esc(m.terminal_code||'')}"></div><div class="field"><label>Conta / estabelecimento</label><input id="cmmMerchant" value="${esc(m.merchant_code||'')}"></div><div class="field full"><label>Observações</label><textarea id="cmmNotes">${esc(m.notes||'')}</textarea></div></div>`,`cmSaveMachine('${id}')`)}
-async function cmSaveMachine(id=''){let payload={company_id:profile.company_id,provider:document.getElementById('cmmProvider').value.trim(),model:document.getElementById('cmmModel').value.trim(),terminal_code:document.getElementById('cmmCode').value.trim(),merchant_code:document.getElementById('cmmMerchant').value.trim(),notes:document.getElementById('cmmNotes').value.trim(),active:true};if(!payload.provider)return toast('Informe a adquirente');let r=id?await sb.from('card_machines').update(payload).eq('id',id):await sb.from('card_machines').insert(payload);if(r.error)return toast('Erro: '+r.error.message);closeModal();toast('Maquininha salva');render()}
-function cmRatesView(){return `<div class="card"><div class="cm-head"><div><span>RATE MATRIX</span><h3>Tabela de Taxas Contratadas</h3></div><button class="btn gold" onclick="cmNewRate()">+ Nova Taxa</button></div><div class="notice">As taxas mudam por plano, faturamento, bandeira e prazo. Cadastre aqui a taxa real contratada da VIMAK; o simulador passa a usar esses valores.</div><div class="table-wrap"><table class="table"><thead><tr><th>Adquirente</th><th>Modalidade</th><th>Bandeira</th><th>Parcelas</th><th>Taxa</th><th>Prazo</th><th>Vigência</th><th></th></tr></thead><tbody>${cache.cardMachineRates.map(r=>`<tr><td><b>${esc(cmProvider(cmM(r.card_machine_id)||{}))}</b></td><td>${esc(r.payment_type)}</td><td>${esc(r.card_brand||'Todas')}</td><td>${r.installments||1}x</td><td><b>${Number(r.rate_pct||0).toFixed(3)}%</b></td><td>D+${r.settlement_days||0}</td><td>${finDate(r.valid_from)}</td><td><button class="btn sm danger" onclick="cmDeleteRate('${r.id}')">Excluir</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">Cadastre as taxas reais das suas maquininhas.</td></tr>'}</tbody></table></div></div>`}
-function cmNewRate(){openModal('Cadastrar Taxa',`<div class="form-grid"><div class="field"><label>Maquininha *</label><select id="cmrMachine">${cache.cardMachines.map(x=>`<option value="${x.id}">${esc(cmProvider(x))}</option>`).join('')}</select></div><div class="field"><label>Modalidade</label><select id="cmrType"><option>Débito</option><option>Crédito</option><option>Pix</option></select></div><div class="field"><label>Bandeira</label><select id="cmrBrand"><option>Visa/Mastercard</option><option>Elo/Amex</option><option>Todas</option></select></div><div class="field"><label>Parcelas</label><select id="cmrInst">${Array.from({length:12},(_,i)=>`<option>${i+1}</option>`).join('')}</select></div><div class="field"><label>Taxa %</label><input id="cmrRate" type="number" step=".001"></div><div class="field"><label>Tarifa fixa R$</label><input id="cmrFixed" type="number" step=".01" value="0"></div><div class="field"><label>Prazo D+</label><input id="cmrDays" type="number" value="1"></div><div class="field"><label>Vigência</label><input id="cmrFrom" type="date" value="${new Date().toISOString().slice(0,10)}"></div></div>`,`cmSaveRate()`)}
-async function cmSaveRate(){let payload={company_id:profile.company_id,card_machine_id:document.getElementById('cmrMachine').value,payment_type:document.getElementById('cmrType').value,card_brand:document.getElementById('cmrBrand').value,installments:+document.getElementById('cmrInst').value,rate_pct:+document.getElementById('cmrRate').value,fixed_fee:+document.getElementById('cmrFixed').value||0,settlement_days:+document.getElementById('cmrDays').value||0,valid_from:document.getElementById('cmrFrom').value,active:true};if(!payload.card_machine_id||payload.rate_pct<0)return toast('Preencha a taxa');let r=await sb.from('card_machine_rates').insert(payload);if(r.error)return toast('Erro: '+r.error.message);closeModal();toast('Taxa cadastrada');render()}
-async function cmDeleteRate(id){if(!confirm('Excluir esta taxa?'))return;let r=await sb.from('card_machine_rates').delete().eq('id',id);if(r.error)return toast('Erro: '+r.error.message);toast('Taxa excluída');render()}
-function cmSales(){let st=cmStats();return `<div class="card"><div class="cm-head"><div><span>TRANSACTION LEDGER</span><h3>Vendas por cartão</h3></div><button class="btn gold" onclick="cmNewSale()">+ Registrar Venda</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Data</th><th>Adquirente</th><th>NSU</th><th>Forma</th><th>Bruto</th><th>Taxa</th><th>Líquido</th><th>Status</th></tr></thead><tbody>${st.tx.map(x=>`<tr><td>${finDate(x.sold_at)}</td><td>${esc(cmProvider(cmM(x.card_machine_id)||{}))}</td><td>${esc(x.nsu||'—')}</td><td>${esc(x.payment_type)} ${x.installments||1}x</td><td>${cmMoney(x.gross_amount)}</td><td>${cmMoney(x.fee_amount)}</td><td><b>${cmMoney(x.net_amount)}</b></td><td><span class="badge ${x.status==='Conciliado'?'ok':'gold'}">${esc(x.status||'Pendente')}</span></td></tr>`).join('')||'<tr><td colspan="8" class="empty">Nenhuma venda registrada.</td></tr>'}</tbody></table></div></div>`}
-function cmNewSale(){openModal('Registrar Venda de Cartão',`<div class="form-grid"><div class="field"><label>Maquininha</label><select id="cmtMachine">${cache.cardMachines.map(x=>`<option value="${x.id}">${esc(cmProvider(x))}</option>`).join('')}</select></div><div class="field"><label>Data</label><input id="cmtDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Modalidade</label><select id="cmtType"><option>Débito</option><option>Crédito</option><option>Pix</option></select></div><div class="field"><label>Parcelas</label><select id="cmtInst">${Array.from({length:12},(_,i)=>`<option>${i+1}</option>`).join('')}</select></div><div class="field"><label>Bandeira</label><input id="cmtBrand" value="Visa/Mastercard"></div><div class="field"><label>Valor bruto</label><input id="cmtGross" type="number" step=".01"></div><div class="field"><label>NSU</label><input id="cmtNsu"></div><div class="field"><label>Autorização</label><input id="cmtAuth"></div></div>`,`cmSaveSale()`)}
-async function cmSaveSale(){let machine=cmM(document.getElementById('cmtMachine').value),gross=+document.getElementById('cmtGross').value||0,type=document.getElementById('cmtType').value,inst=+document.getElementById('cmtInst').value,brand=document.getElementById('cmtBrand').value,sim=cmSim(machine,gross,type,inst,brand),sold=document.getElementById('cmtDate').value;if(!machine||!gross)return toast('Informe maquininha e valor');let payload={company_id:profile.company_id,card_machine_id:machine.id,sold_at:new Date(sold+'T12:00:00').toISOString(),payment_type:type,installments:inst,card_brand:brand,gross_amount:gross,rate_pct:sim.rate,fee_amount:sim.fee,net_amount:sim.net,nsu:document.getElementById('cmtNsu').value.trim(),authorization_code:document.getElementById('cmtAuth').value.trim(),status:'Pendente'};let r=await sb.from('card_transactions').insert(payload).select().single();if(r.error)return toast('Erro: '+r.error.message);let expected=new Date(sold+'T12:00:00');expected.setDate(expected.getDate()+sim.days);await sb.from('card_settlements').insert({company_id:profile.company_id,card_transaction_id:r.data.id,card_machine_id:machine.id,expected_at:expected.toISOString(),gross_amount:gross,fee_amount:sim.fee,net_amount:sim.net,status:'Previsto'});closeModal();toast('Venda e recebível registrados');render()}
-function cmReconcile(){let rows=cache.cardSettlements;return `<div class="card"><div class="cm-head"><div><span>SETTLEMENT RECONCILIATION</span><h3>Conciliação de recebíveis</h3></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Previsto</th><th>Adquirente</th><th>Bruto</th><th>Taxas</th><th>Líquido</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td>${finDate(x.expected_at)}</td><td>${esc(cmProvider(cmM(x.card_machine_id)||{}))}</td><td>${cmMoney(x.gross_amount)}</td><td>${cmMoney(x.fee_amount)}</td><td><b>${cmMoney(x.net_amount)}</b></td><td><span class="badge ${x.status==='Conciliado'?'ok':'gold'}">${esc(x.status)}</span></td><td>${x.status!=='Conciliado'?`<button class="btn sm gold" onclick="cmMarkReconciled('${x.id}')">Conciliar</button>`:''}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">Sem recebíveis de cartão.</td></tr>'}</tbody></table></div></div>`}
-async function cmMarkReconciled(id){let r=await sb.from('card_settlements').update({status:'Conciliado',settled_at:new Date().toISOString()}).eq('id',id);if(r.error)return toast('Erro: '+r.error.message);toast('Recebível conciliado');render()}
-function maquininhas(){let st=cmStats(),pending=cache.cardSettlements.filter(x=>x.status!=='Conciliado').reduce((a,x)=>a+Number(x.net_amount||0),0),tabs=[['cockpit','◈ Cockpit'],['simulador','◎ Simulador'],['maquinas','▣ Maquininhas'],['taxas','% Tabela de Taxas'],['vendas','↗ Vendas'],['conciliacao','✓ Conciliação']];return shell('Maquininhas & Taxas PRO','Inteligência de adquirência, roteamento de vendas, taxas e conciliação',`<button class="btn" onclick="cmSetTab('simulador')">◎ Simular Venda</button><button class="btn gold" onclick="cmNewMachine()">+ Maquininha</button>`,`<div class="cm-command"><div><span class="measurement-version">V6.19 • PAYMENT ACQUIRING CONTROL TOWER</span><h2>Central Inteligente de Maquininhas</h2><p>Compare InfinitePay, Mercado Pago, Leozinha e qualquer adquirente usando as taxas reais contratadas pela VIMAK.</p></div><div class="cm-live"><i></i><span>FEE ENGINE</span><b>ATIVO</b></div></div><div class="grid g4 proposal-kpis"><div class="card kpi"><label>Volume processado</label><strong>${cmMoney(st.gross)}</strong></div><div class="card kpi"><label>Custo em taxas</label><strong class="goldtxt">${cmMoney(st.fees)}</strong></div><div class="card kpi"><label>Taxa efetiva média</label><strong>${st.avg.toFixed(2)}%</strong></div><div class="card kpi"><label>A receber cartões</label><strong class="green">${cmMoney(pending)}</strong></div></div><div class="cm-tabs">${tabs.map(x=>`<button class="${cmTab===x[0]?'active':''}" onclick="cmSetTab('${x[0]}')">${x[1]}</button>`).join('')}</div>${cmTab==='cockpit'?cmCockpit():cmTab==='simulador'?cmSimulator():cmTab==='maquinas'?cmMachines():cmTab==='taxas'?cmRatesView():cmTab==='vendas'?cmSales():cmReconcile()}${cmTab==='simulador'?'<script>setTimeout(cmRunSim,0)</script>':''}`)}
+function maquininhas(){return simpleTable("Maquininhas & Taxas","Tabela card_machines pronta","",["Maquininha","Débito","Crédito","Ações"],[])}
+
+const VIEWS={dashboard,leads,empresa,usuarios,auditoria,planos,clientes,fornecedores,parceiros,posvenda,insumos,propostas,modelos,medicoes,compras,templates,kanban,corte,sobras,cortecloud,equipes,agenda,financeiro,maquininhas};
+window.addEventListener("hashchange",()=>{page=location.hash.slice(1)||"dashboard";if(session)render()});
+init();
