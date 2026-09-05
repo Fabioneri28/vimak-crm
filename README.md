@@ -1,4 +1,4 @@
-# VIMAK CRM V6.18 — FINANCEIRO ENTERPRISE
+# VIMAK CRM V6.20.5 — BASE OURO COMPLETA
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -292,3 +292,15 @@ CFO Command Center inspirado em práticas de ERP corporativo:
 - Estrutura multi-entidade e multimoeda preparada para expansão.
 - Migration aditiva `005_finance_enterprise.sql`.
 - A implementação não substitui escrituração contábil/fiscal oficial nem integrações bancárias homologadas.
+
+
+## V6.20.5 — Base Ouro Completa
+Reconstruída diretamente da V6.18 enviada e confirmada como estável.
+
+Inclui:
+- V6.18 Financeiro Enterprise completo.
+- V6.19 Maquininhas & Taxas PRO, carregado isoladamente.
+- V6.20 Leads & CRM Intelligence, carregado isoladamente.
+- Login, init, loadIdentity e refreshCore permanecem exatamente iguais à V6.18.
+- Extras de V6.19/V6.20 são consultados somente quando o módulo correspondente é aberto.
+- Se migrations 006/007 ainda não estiverem aplicadas, o núcleo do ERP continua funcionando.
