@@ -1,4 +1,4 @@
-# VIMAK CRM V6.11 — DOCUMENTOS & TEMPLATES PRO
+# VIMAK CRM V6.12 — PRODUÇÃO KANBAN PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -190,3 +190,18 @@ A policy existente isola os arquivos pelo primeiro diretório do caminho, que é
 - Gerar PDF via diálogo de impressão do navegador.
 - Editar, duplicar, ativar/inativar e excluir.
 - Nenhuma nova migration necessária.
+
+
+## V6.12 — Produção Kanban PRO
+- Torre de controle industrial com 8 etapas.
+- Drag & drop real entre etapas com persistência no Supabase.
+- Ordens de produção em `production_projects`.
+- Cliente e proposta vinculados.
+- Importação de proposta para produção.
+- Prioridade, prazo, progresso e alertas de atraso.
+- Progresso automático por etapa e ajuste manual.
+- KPIs de projetos, ativos, atrasados, urgentes e avanço médio.
+- Visual Kanban e visual Lista.
+- Filtros de atrasados e urgentes + busca.
+- Timeline completa da ordem e atalhos para Medições e Compras.
+- Nenhuma migration nova necessária.
