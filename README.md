@@ -1,4 +1,4 @@
-# VIMAK CRM V6.6 — INSUMOS PRO
+# VIMAK CRM V6.7 — PROPOSTAS PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -79,3 +79,29 @@ O cache do Service Worker foi alterado para `vimak-crm-v6-2-clientes-pro`.
 - Alertas automáticos de estoque mínimo.
 - Busca, visualização, edição e exclusão.
 - Mantém módulos PRO anteriores, Auth, RLS e Service Worker seguro.
+
+
+## V6.7 — Propostas PRO
+
+- Propostas reais vinculadas a clientes e parceiros.
+- Itens da proposta gravados em `proposal_items`.
+- Adição de itens a partir do cadastro de Insumos.
+- Itens livres para serviços e composições personalizadas.
+- Ambiente, quantidade, unidade, custo, preço de venda e total por item.
+- Subtotal, desconto, montagem, frete e valor final automáticos.
+- Margem bruta estimada em R$ e %.
+- Validade, prazo de entrega, garantia e condições de pagamento.
+- Status: Orçado, Enviado, Negociação, Aprovado, Perdido e Cancelado.
+- Visualização detalhada.
+- Edição completa.
+- Duplicação de proposta.
+- Aprovação e mudança de status.
+- Exclusão com confirmação.
+- Geração de layout profissional para impressão / Salvar como PDF.
+- KPIs: pipeline, aprovadas, conversão e ticket médio.
+- Preserva Clientes PRO, Fornecedores PRO, Parceiros PRO, Pós-venda PRO e Insumos PRO.
+- Mantém o Project URL correto, Auth, RLS multiempresa e Service Worker seguro.
+
+### Banco de dados
+A V6.7 utiliza as tabelas `proposals` e `proposal_items` que já existem na migration inicial.
+Não é necessária uma nova migration para o módulo Propostas PRO.

@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -24,7 +24,7 @@ function money(v){return Number(v||0).toLocaleString("pt-BR",{style:"currency",c
 function toast(t){const x=document.getElementById("toast");x.textContent=t;x.classList.add("show");setTimeout(()=>x.classList.remove("show"),2000)}
 function toggleMenu(){sidebar.classList.toggle("open")}
 function openModal(title,body,action){modal.innerHTML=`<div class="modal-head"><h2>${title}</h2><button class="close" onclick="closeModal()">×</button></div>${body}<div class="modal-actions"><button class="btn" onclick="closeModal()">Cancelar</button>${action?`<button class="btn gold" onclick="${action}">Salvar</button>`:""}</div>`;modalWrap.classList.add("open")}
-function closeModal(){modalWrap.classList.remove("open")}
+function closeModal(){modalWrap.classList.remove("open");modal.classList.remove("proposal-modal")}
 function shell(title,sub,actions="",body=""){return `<div class="page-head"><div><h1>${title}</h1><p>${sub}</p></div><div class="actions">${actions}</div></div>${body}`}
 function simpleTable(title,sub,button,headers,rows){return shell(title,sub,button,`<div class="filters"><div class="field"><label>Buscar</label><input placeholder="Digite para pesquisar..." oninput="filterTable(this.value)"></div></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody id="rows">${rows.length?rows.join(""):`<tr><td class="empty" colspan="${headers.length}">Nenhum registro cadastrado.</td></tr>`}</tbody></table></div></div>`)}
 function filterTable(q){q=q.toLowerCase();document.querySelectorAll("#rows tr").forEach(r=>r.style.display=r.innerText.toLowerCase().includes(q)?"":"none")}
@@ -148,10 +148,11 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p,s,pa,as,i]=await Promise.all([
+  const [c,l,p,pi,s,pa,as,i]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
     sb.from("proposals").select("*").order("created_at",{ascending:false}),
+    sb.from("proposal_items").select("*").order("created_at",{ascending:true}),
     sb.from("suppliers").select("*").order("created_at",{ascending:false}),
     sb.from("partners").select("*").order("created_at",{ascending:false}),
     sb.from("after_sales_tickets").select("*").order("opened_at",{ascending:false}),
@@ -160,6 +161,7 @@ async function refreshCore(){
   cache.clients=c.data||[];
   cache.leads=l.data||[];
   cache.proposals=p.data||[];
+  cache.proposalItems=pi.data||[];
   cache.suppliers=s.data||[];
   cache.partners=pa.data||[];
   cache.afterSales=as.data||[];
@@ -253,13 +255,367 @@ async function deleteClient(id){
  if(error)return toast("Erro: "+error.message);
  toast("Cliente excluído");render();
 }
-function propostas(){return simpleTable("Propostas","Propostas reais no PostgreSQL",`<button class="btn gold" onclick="addProposal()">+ Nova Proposta</button>`,["Nº","Título","Status","Valor","Criado em","Ações"],cache.proposals.map(x=>`<tr><td>${x.number||""}</td><td>${esc(x.title)}</td><td><span class="badge">${esc(x.status)}</span></td><td>${money(x.total)}</td><td>${new Date(x.created_at).toLocaleDateString("pt-BR")}</td><td><button class="btn sm danger" onclick="deleteRow('proposals','${x.id}')">Excluir</button></td></tr>`))}
-function addProposal(){openModal("Nova Proposta",`<div class="form-grid"><div class="field"><label>Título</label><input id="pt"></div><div class="field"><label>Valor</label><input id="pv" type="number"></div><div class="field"><label>Status</label><select id="ps"><option>Orçado</option><option>Negociação</option><option>Aprovado</option><option>Perdido</option></select></div></div>`,`saveProposal()`)}
-async function saveProposal(){
- if(!pt.value.trim())return toast("Informe o título");
- const {error}=await sb.from("proposals").insert({company_id:profile.company_id,title:pt.value.trim(),status:ps.value,total:Number(pv.value||0),created_by:session.user.id});
- if(error)return toast("Erro: "+error.message);
- closeModal();toast("Proposta salva na nuvem");render();
+let proposalDraftItems=[];
+let proposalEditingId=null;
+
+function proposalById(id){return cache.proposals.find(x=>x.id===id)}
+function proposalClient(id){return cache.clients.find(x=>x.id===id)}
+function proposalPartner(id){return cache.partners.find(x=>x.id===id)}
+function proposalItems(id){return cache.proposalItems.filter(x=>x.proposal_id===id)}
+function proposalNumber(v){return "PROP-"+String(v||0).padStart(6,"0")}
+function proposalStatusClass(s){
+  if(s==="Aprovado")return "ok";
+  if(["Perdido","Cancelado"].includes(s))return "bad";
+  if(["Negociação","Enviado"].includes(s))return "blue";
+  return "";
+}
+function proposalDate(v){return v?new Date(v+"T12:00:00").toLocaleDateString("pt-BR"):"—"}
+function proposalItemTotal(x){return Number(x.qty||0)*Number(x.unit_price||0)}
+function proposalCostTotal(x){return Number(x.qty||0)*Number(x.cost||0)}
+function proposalMetricsFromDraft(){
+  const subtotal=proposalDraftItems.reduce((a,x)=>a+proposalItemTotal(x),0);
+  const cost=proposalDraftItems.reduce((a,x)=>a+proposalCostTotal(x),0);
+  const discount=Number(document.getElementById("pdiscount")?.value||0);
+  const assembly=Number(document.getElementById("passembly")?.value||0);
+  const freight=Number(document.getElementById("pfreight")?.value||0);
+  const total=Math.max(0,subtotal-discount+assembly+freight);
+  const margin=total-cost;
+  const marginPct=total>0?(margin/total)*100:0;
+  return {subtotal,cost,discount,assembly,freight,total,margin,marginPct};
+}
+function proposalClientOptions(selected=""){
+  return cache.clients.map(c=>`<option value="${c.id}" ${selected===c.id?"selected":""}>${esc(c.name)}</option>`).join("");
+}
+function proposalPartnerOptions(selected=""){
+  return cache.partners.filter(x=>x.active!==false).map(p=>`<option value="${p.id}" ${selected===p.id?"selected":""}>${esc(p.name)} • ${esc(p.type||"Parceiro")}</option>`).join("");
+}
+function proposalInputOptions(){
+  return cache.inputs.filter(x=>x.active!==false).map(i=>`<option value="${i.id}">${esc(i.name)} • ${money(i.unit_cost)} / ${esc(i.unit||"un")}</option>`).join("");
+}
+function proposalForm(x={}){
+  const defaultValid=(()=>{const d=new Date();d.setDate(d.getDate()+15);return d.toISOString().slice(0,10)})();
+  return `<div class="proposal-editor">
+    <div class="proposal-head-grid">
+      <div class="field"><label>Cliente *</label><select id="pclient"><option value="">Selecione o cliente...</option>${proposalClientOptions(x.client_id||"")}</select></div>
+      <div class="field"><label>Parceiro / Indicador</label><select id="ppartner"><option value="">Sem parceiro</option>${proposalPartnerOptions(x.partner_id||"")}</select></div>
+      <div class="field full"><label>Título da proposta *</label><input id="ptitle" value="${esc(x.title||"")}" placeholder="Ex.: Móveis planejados • Cozinha + Área Gourmet"></div>
+      <div class="field"><label>Status</label><select id="pstatus">${["Orçado","Enviado","Negociação","Aprovado","Perdido","Cancelado"].map(v=>`<option ${x.status===v?"selected":""}>${v}</option>`).join("")}</select></div>
+      <div class="field"><label>Validade</label><input id="pvalid" type="date" value="${esc(x.valid_until||defaultValid)}"></div>
+      <div class="field"><label>Prazo de entrega (dias)</label><input id="pdelivery" type="number" min="0" value="${Number(x.delivery_days||45)}"></div>
+      <div class="field"><label>Garantia (meses)</label><input id="pwarranty" type="number" min="0" value="${Number(x.warranty_months||60)}"></div>
+    </div>
+
+    <div class="proposal-items-toolbar">
+      <div class="field proposal-input-pick"><label>Adicionar do cadastro de Insumos</label><select id="proposalInputPick"><option value="">Selecione um insumo...</option>${proposalInputOptions()}</select></div>
+      <button class="btn gold" type="button" onclick="addProposalInputItem()">+ Adicionar insumo</button>
+      <button class="btn" type="button" onclick="addProposalFreeItem()">+ Item livre</button>
+    </div>
+
+    <div class="proposal-items-card">
+      <div class="table-wrap">
+        <table class="table proposal-items-table">
+          <thead><tr><th>Ambiente</th><th>Descrição</th><th>Qtd.</th><th>Un.</th><th>Custo</th><th>Preço venda</th><th>Total</th><th></th></tr></thead>
+          <tbody id="proposalItemRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="proposal-bottom-grid">
+      <div>
+        <div class="field"><label>Condições de pagamento</label><textarea id="ppayment" rows="4" placeholder="Ex.: 40% entrada + saldo em 6x no cartão">${esc(x.payment_terms||"")}</textarea></div>
+        <div class="field" style="margin-top:10px"><label>Observações comerciais</label><textarea id="pnotes" rows="5" placeholder="Detalhes de acabamento, exclusões, premissas, observações...">${esc(x.notes||"")}</textarea></div>
+      </div>
+      <div class="proposal-totals">
+        <div class="field"><label>Desconto (R$)</label><input id="pdiscount" type="number" min="0" step="0.01" value="${Number(x.discount||0)}" oninput="refreshProposalDraft()"></div>
+        <div class="field"><label>Taxa de montagem (R$)</label><input id="passembly" type="number" min="0" step="0.01" value="${Number(x.assembly_fee||0)}" oninput="refreshProposalDraft()"></div>
+        <div class="field"><label>Frete (R$)</label><input id="pfreight" type="number" min="0" step="0.01" value="${Number(x.freight||0)}" oninput="refreshProposalDraft()"></div>
+        <div class="proposal-summary" id="proposalSummary"></div>
+      </div>
+    </div>
+  </div>`;
+}
+function proposalItemRow(x,idx){
+  return `<tr>
+    <td><input class="table-input" value="${esc(x.environment||"")}" placeholder="Cozinha" oninput="updateProposalDraftItem(${idx},'environment',this.value)"></td>
+    <td><input class="table-input wide" value="${esc(x.description||"")}" placeholder="Descrição do item" oninput="updateProposalDraftItem(${idx},'description',this.value)"></td>
+    <td><input class="table-input num" type="number" min="0" step="0.01" value="${Number(x.qty||1)}" oninput="updateProposalDraftItem(${idx},'qty',this.value)"></td>
+    <td><input class="table-input unit" value="${esc(x.unit||"un")}" oninput="updateProposalDraftItem(${idx},'unit',this.value)"></td>
+    <td><input class="table-input num" type="number" min="0" step="0.01" value="${Number(x.cost||0)}" oninput="updateProposalDraftItem(${idx},'cost',this.value)"></td>
+    <td><input class="table-input num" type="number" min="0" step="0.01" value="${Number(x.unit_price||0)}" oninput="updateProposalDraftItem(${idx},'unit_price',this.value)"></td>
+    <td><b class="goldtxt">${money(proposalItemTotal(x))}</b></td>
+    <td><button class="btn sm danger" type="button" onclick="removeProposalDraftItem(${idx})">×</button></td>
+  </tr>`;
+}
+function refreshProposalDraft(){
+  const rows=document.getElementById("proposalItemRows");
+  if(rows) rows.innerHTML=proposalDraftItems.length?proposalDraftItems.map(proposalItemRow).join(""):`<tr><td class="empty" colspan="8">Nenhum item. Adicione um insumo ou item livre.</td></tr>`;
+  const summary=document.getElementById("proposalSummary");
+  if(summary){
+    const m=proposalMetricsFromDraft();
+    summary.innerHTML=`
+      <div><span>Subtotal dos itens</span><b>${money(m.subtotal)}</b></div>
+      <div><span>Custo estimado</span><b>${money(m.cost)}</b></div>
+      <div><span>Desconto</span><b>- ${money(m.discount)}</b></div>
+      <div><span>Montagem + frete</span><b>${money(m.assembly+m.freight)}</b></div>
+      <div class="proposal-total-line"><span>VALOR FINAL</span><strong>${money(m.total)}</strong></div>
+      <div class="proposal-margin"><span>Margem bruta estimada</span><b class="${m.margin>=0?"green":"red"}">${money(m.margin)} • ${m.marginPct.toFixed(1)}%</b></div>`;
+  }
+}
+function updateProposalDraftItem(idx,key,value){
+  if(!proposalDraftItems[idx])return;
+  proposalDraftItems[idx][key]=["qty","cost","unit_price"].includes(key)?Number(value||0):value;
+  refreshProposalDraft();
+}
+function addProposalInputItem(){
+  const id=document.getElementById("proposalInputPick")?.value;
+  if(!id)return toast("Selecione um insumo");
+  const i=cache.inputs.find(x=>x.id===id); if(!i)return;
+  proposalDraftItems.push({
+    description:i.name,
+    environment:"",
+    qty:1,
+    unit:i.unit||"un",
+    cost:Number(i.unit_cost||0),
+    unit_price:Number(i.unit_cost||0),
+    metadata:{input_id:i.id,sku:i.sku||null,type:i.type||null,brand:i.brand||null}
+  });
+  refreshProposalDraft();
+}
+function addProposalFreeItem(){
+  proposalDraftItems.push({description:"",environment:"",qty:1,unit:"un",cost:0,unit_price:0,metadata:{manual:true}});
+  refreshProposalDraft();
+}
+function removeProposalDraftItem(idx){proposalDraftItems.splice(idx,1);refreshProposalDraft()}
+function openProposalEditor(x={}){
+  openModal(x.id?`Editar ${proposalNumber(x.number)}`:"Nova Proposta",proposalForm(x),`saveProposal('${x.id||""}')`);
+  modal.classList.add("proposal-modal");
+  setTimeout(refreshProposalDraft,0);
+}
+function addProposal(){
+  if(!cache.clients.length)return toast("Cadastre um cliente antes de criar uma proposta");
+  proposalEditingId=null;
+  proposalDraftItems=[];
+  openProposalEditor({});
+}
+function editProposal(id){
+  const x=proposalById(id);if(!x)return toast("Proposta não encontrada");
+  proposalEditingId=id;
+  proposalDraftItems=proposalItems(id).map(i=>({...i,metadata:i.metadata||{}}));
+  openProposalEditor(x);
+}
+async function saveProposal(id=""){
+  const client_id=document.getElementById("pclient")?.value;
+  const title=document.getElementById("ptitle")?.value.trim();
+  if(!client_id)return toast("Selecione o cliente");
+  if(!title)return toast("Informe o título");
+  if(!proposalDraftItems.length)return toast("Adicione ao menos um item à proposta");
+  if(proposalDraftItems.some(x=>!String(x.description||"").trim()))return toast("Há item sem descrição");
+  const m=proposalMetricsFromDraft();
+  const status=document.getElementById("pstatus").value;
+  const payload={
+    company_id:profile.company_id,
+    client_id,
+    partner_id:document.getElementById("ppartner").value||null,
+    title,
+    status,
+    subtotal:m.subtotal,
+    discount:m.discount,
+    assembly_fee:m.assembly,
+    freight:m.freight,
+    total:m.total,
+    payment_terms:document.getElementById("ppayment").value.trim()||null,
+    delivery_days:Number(document.getElementById("pdelivery").value||0)||null,
+    warranty_months:Number(document.getElementById("pwarranty").value||0)||null,
+    notes:document.getElementById("pnotes").value.trim()||null,
+    valid_until:document.getElementById("pvalid").value||null,
+    approved_at:status==="Aprovado"?new Date().toISOString():null
+  };
+  let proposalId=id, error=null;
+  if(id){
+    ({error}=await sb.from("proposals").update(payload).eq("id",id));
+  }else{
+    payload.created_by=session.user.id;
+    const res=await sb.from("proposals").insert(payload).select("id").single();
+    error=res.error; proposalId=res.data?.id;
+  }
+  if(error||!proposalId)return toast("Erro ao salvar proposta: "+(error?.message||"ID não retornado"));
+
+  const existingIds=new Set(proposalItems(proposalId).map(x=>x.id));
+  const keptIds=new Set(proposalDraftItems.map(x=>x.id).filter(Boolean));
+  const removed=[...existingIds].filter(x=>!keptIds.has(x));
+  if(removed.length){
+    const del=await sb.from("proposal_items").delete().in("id",removed);
+    if(del.error)return toast("Proposta salva, mas houve erro ao remover itens: "+del.error.message);
+  }
+
+  for(const item of proposalDraftItems){
+    const itemPayload={
+      company_id:profile.company_id,
+      proposal_id:proposalId,
+      description:String(item.description||"").trim(),
+      environment:item.environment||null,
+      qty:Number(item.qty||0),
+      unit:item.unit||"un",
+      unit_price:Number(item.unit_price||0),
+      cost:Number(item.cost||0),
+      total:proposalItemTotal(item),
+      metadata:item.metadata||{}
+    };
+    let itemError;
+    if(item.id){
+      ({error:itemError}=await sb.from("proposal_items").update(itemPayload).eq("id",item.id));
+    }else{
+      ({error:itemError}=await sb.from("proposal_items").insert(itemPayload));
+    }
+    if(itemError)return toast("Proposta salva, mas um item falhou: "+itemError.message);
+  }
+  modal.classList.remove("proposal-modal");
+  closeModal();
+  toast(id?"Proposta atualizada":"Proposta criada com sucesso");
+  render();
+}
+async function updateProposalStatus(id,status){
+  const payload={status};
+  if(status==="Aprovado")payload.approved_at=new Date().toISOString();
+  if(status!=="Aprovado")payload.approved_at=null;
+  const {error}=await sb.from("proposals").update(payload).eq("id",id);
+  if(error)return toast("Erro: "+error.message);
+  toast("Status atualizado para "+status);render();
+}
+async function duplicateProposal(id){
+  const x=proposalById(id);if(!x)return;
+  if(!confirm(`Duplicar ${proposalNumber(x.number)}?`))return;
+  const payload={...x};
+  ["id","number","created_at","updated_at","approved_at"].forEach(k=>delete payload[k]);
+  payload.title=(x.title||"Proposta")+" • Cópia";
+  payload.status="Orçado";
+  payload.created_by=session.user.id;
+  const {data,error}=await sb.from("proposals").insert(payload).select("id").single();
+  if(error)return toast("Erro: "+error.message);
+  const items=proposalItems(id).map(i=>{
+    const y={...i};["id","created_at","updated_at"].forEach(k=>delete y[k]);y.proposal_id=data.id;return y;
+  });
+  if(items.length){
+    const ins=await sb.from("proposal_items").insert(items);
+    if(ins.error)return toast("Proposta duplicada, mas itens falharam: "+ins.error.message);
+  }
+  toast("Proposta duplicada");render();
+}
+async function deleteProposal(id){
+  const x=proposalById(id);if(!x)return;
+  if(!confirm(`Excluir definitivamente ${proposalNumber(x.number)}? Os itens vinculados também serão removidos.`))return;
+  const {error}=await sb.from("proposals").delete().eq("id",id);
+  if(error)return toast("Erro: "+error.message);
+  toast("Proposta excluída");render();
+}
+function viewProposal(id){
+  const x=proposalById(id);if(!x)return;
+  const c=proposalClient(x.client_id);
+  const p=proposalPartner(x.partner_id);
+  const items=proposalItems(id);
+  const cost=items.reduce((a,i)=>a+proposalCostTotal(i),0);
+  const margin=Number(x.total||0)-cost;
+  const mp=Number(x.total||0)>0?margin/Number(x.total||0)*100:0;
+  openModal(`${proposalNumber(x.number)} • ${esc(x.title)}`,`<div class="client-detail">
+    <div class="client-hero"><div class="client-avatar">P</div><div><span class="badge ${proposalStatusClass(x.status)}">${esc(x.status)}</span><p>${esc(c?.name||"Cliente")} ${p?"• Parceiro: "+esc(p.name):""}</p></div></div>
+    <div class="detail-grid">
+      <div><label>Valor final</label><b class="goldtxt">${money(x.total)}</b></div>
+      <div><label>Margem estimada</label><b class="${margin>=0?"green":"red"}">${money(margin)} • ${mp.toFixed(1)}%</b></div>
+      <div><label>Validade</label><b>${proposalDate(x.valid_until)}</b></div>
+      <div><label>Entrega</label><b>${x.delivery_days?x.delivery_days+" dias":"—"}</b></div>
+      <div><label>Garantia</label><b>${x.warranty_months?x.warranty_months+" meses":"—"}</b></div>
+      <div><label>Criada em</label><b>${new Date(x.created_at).toLocaleDateString("pt-BR")}</b></div>
+    </div>
+    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Ambiente</th><th>Descrição</th><th>Qtd.</th><th>Preço</th><th>Total</th></tr></thead><tbody>
+      ${items.map(i=>`<tr><td>${esc(i.environment||"—")}</td><td>${esc(i.description)}</td><td>${Number(i.qty||0)} ${esc(i.unit||"")}</td><td>${money(i.unit_price)}</td><td><b class="goldtxt">${money(i.total)}</b></td></tr>`).join("")||`<tr><td class="empty" colspan="5">Sem itens</td></tr>`}
+    </tbody></table></div></div>
+    <div class="detail-notes"><label>Condições de pagamento</label><p>${esc(x.payment_terms||"—")}</p></div>
+    <div class="detail-notes"><label>Observações</label><p>${esc(x.notes||"—")}</p></div>
+    <div class="client-quick">
+      <button class="btn gold" onclick="printProposal('${id}')">Gerar PDF / Imprimir</button>
+      <button class="btn" onclick="closeModal();editProposal('${id}')">Editar</button>
+      ${x.status!=="Aprovado"?`<button class="btn" onclick="closeModal();updateProposalStatus('${id}','Aprovado')">Aprovar</button>`:""}
+      <button class="btn" onclick="closeModal();duplicateProposal('${id}')">Duplicar</button>
+    </div>
+  </div>`,"");
+}
+function printProposal(id){
+  const x=proposalById(id);if(!x)return;
+  const c=proposalClient(x.client_id)||{};
+  const p=proposalPartner(x.partner_id);
+  const items=proposalItems(id);
+  const cost=items.reduce((a,i)=>a+proposalCostTotal(i),0);
+  const margin=Number(x.total||0)-cost;
+  const w=window.open("","_blank","width=980,height=760");
+  if(!w)return toast("Permita pop-ups para gerar o PDF");
+  const rows=items.map(i=>`<tr><td>${esc(i.environment||"—")}</td><td>${esc(i.description)}</td><td>${Number(i.qty||0)} ${esc(i.unit||"")}</td><td>${money(i.unit_price)}</td><td>${money(i.total)}</td></tr>`).join("");
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${proposalNumber(x.number)} - ${esc(x.title)}</title>
+  <style>
+  *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1d1b18;margin:0;background:#fff}.page{max-width:900px;margin:auto;padding:38px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #c9973f;padding-bottom:20px}.brand{font-size:26px;font-weight:900}.brand span{color:#c9973f}.num{text-align:right}.num b{display:block;font-size:20px}
+  .muted{color:#6d675e}.block{margin-top:24px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.box{border:1px solid #ddd5c8;padding:12px;border-radius:8px}
+  table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#171614;color:#fff;text-align:left;padding:10px;font-size:12px}td{padding:10px;border-bottom:1px solid #e7e0d5;font-size:12px}
+  .totals{width:360px;margin-left:auto;margin-top:22px}.totals div{display:flex;justify-content:space-between;padding:7px 0}.grand{border-top:2px solid #c9973f;font-size:18px;font-weight:800}
+  .notes{white-space:pre-wrap;line-height:1.5}.footer{margin-top:38px;border-top:1px solid #ddd5c8;padding-top:16px;font-size:11px;color:#746d63}
+  @media print{.page{padding:20px}.no-print{display:none}}
+  </style></head><body><div class="page">
+    <div class="top"><div><div class="brand">${esc(company.name||"VIMAK")} <span>PROPOSTA</span></div><div class="muted">${esc(company.legal_name||"")}</div></div><div class="num"><b>${proposalNumber(x.number)}</b><span class="muted">${new Date(x.created_at).toLocaleDateString("pt-BR")}</span></div></div>
+    <div class="block grid"><div class="box"><b>CLIENTE</b><br>${esc(c.name||"—")}<br><span class="muted">${esc(c.document||"")}${c.city?" • "+esc(c.city):""}</span></div><div class="box"><b>PROJETO</b><br>${esc(x.title)}<br><span class="muted">Validade: ${proposalDate(x.valid_until)} • Entrega: ${x.delivery_days||"—"} dias</span></div></div>
+    ${p?`<div class="block box"><b>PARCEIRO / INDICAÇÃO:</b> ${esc(p.name)}</div>`:""}
+    <div class="block"><h3>Itens da proposta</h3><table><thead><tr><th>Ambiente</th><th>Descrição</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="totals">
+      <div><span>Subtotal</span><b>${money(x.subtotal)}</b></div>
+      <div><span>Desconto</span><b>- ${money(x.discount)}</b></div>
+      <div><span>Montagem</span><b>${money(x.assembly_fee)}</b></div>
+      <div><span>Frete</span><b>${money(x.freight)}</b></div>
+      <div class="grand"><span>VALOR FINAL</span><b>${money(x.total)}</b></div>
+    </div>
+    <div class="block box"><b>CONDIÇÕES DE PAGAMENTO</b><div class="notes">${esc(x.payment_terms||"A combinar")}</div></div>
+    <div class="block box"><b>OBSERVAÇÕES</b><div class="notes">${esc(x.notes||"")}</div></div>
+    <div class="footer">Garantia: ${x.warranty_months||60} meses • Proposta emitida por ${esc(company.name||"VIMAK")}.<span style="display:none">${margin}</span></div>
+  </div><script>window.onload=()=>setTimeout(()=>window.print(),350)<\/script></body></html>`);
+  w.document.close();
+}
+function propostas(){
+  const total=cache.proposals.reduce((a,x)=>a+Number(x.total||0),0);
+  const aprovadas=cache.proposals.filter(x=>x.status==="Aprovado");
+  const aprovadasValor=aprovadas.reduce((a,x)=>a+Number(x.total||0),0);
+  const concluidas=cache.proposals.filter(x=>["Aprovado","Perdido","Cancelado"].includes(x.status)).length;
+  const conversao=concluidas?aprovadas.length/concluidas*100:0;
+  const ticket=aprovadas.length?aprovadasValor/aprovadas.length:0;
+  const rows=cache.proposals.map(x=>{
+    const c=proposalClient(x.client_id);
+    const items=proposalItems(x.id);
+    const ambientes=[...new Set(items.map(i=>i.environment).filter(Boolean))];
+    return `<tr>
+      <td><button class="link-client" onclick="viewProposal('${x.id}')"><b>${proposalNumber(x.number)}</b></button><small>${new Date(x.created_at).toLocaleDateString("pt-BR")}</small></td>
+      <td><b>${esc(x.title)}</b><small>${esc(c?.name||"Cliente não vinculado")}</small></td>
+      <td>${esc(ambientes.slice(0,3).join(" • ")||"—")}${ambientes.length>3?`<small>+${ambientes.length-3} ambiente(s)</small>`:""}</td>
+      <td><span class="badge ${proposalStatusClass(x.status)}">${esc(x.status)}</span></td>
+      <td><b class="goldtxt">${money(x.total)}</b></td>
+      <td>${proposalDate(x.valid_until)}</td>
+      <td><div class="row-actions">
+        <button class="btn sm" onclick="viewProposal('${x.id}')">Ver</button>
+        <button class="btn sm" onclick="editProposal('${x.id}')">Editar</button>
+        <button class="btn sm" onclick="printProposal('${x.id}')">PDF</button>
+        <button class="btn sm" onclick="duplicateProposal('${x.id}')">Duplicar</button>
+        <button class="btn sm danger" onclick="deleteProposal('${x.id}')">Excluir</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+  return shell("Propostas","Orçamento comercial conectado a clientes, parceiros e insumos",
+    `<button class="btn gold" onclick="addProposal()">+ Nova Proposta</button>`,
+    `<div class="grid g4 proposal-kpis">
+      <div class="card kpi"><label>Pipeline em propostas</label><strong class="goldtxt">${money(total)}</strong></div>
+      <div class="card kpi"><label>Aprovadas</label><strong>${aprovadas.length}</strong><small>${money(aprovadasValor)}</small></div>
+      <div class="card kpi"><label>Taxa de conversão</label><strong>${conversao.toFixed(1)}%</strong></div>
+      <div class="card kpi"><label>Ticket médio aprovado</label><strong>${money(ticket)}</strong></div>
+    </div>
+    <div class="filters">
+      <div class="field"><label>Buscar</label><input placeholder="Número, cliente, título, ambiente..." oninput="filterTable(this.value)"></div>
+      <div class="proposal-legend"><span class="badge">Orçado</span><span class="badge blue">Negociação</span><span class="badge ok">Aprovado</span><span class="badge bad">Perdido / Cancelado</span></div>
+    </div>
+    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Nº</th><th>Proposta / Cliente</th><th>Ambientes</th><th>Status</th><th>Valor final</th><th>Validade</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="7">Nenhuma proposta cadastrada. Clique em + Nova Proposta.</td></tr>`}</tbody></table></div></div>`);
 }
 async function deleteRow(table,id){
  if(!confirm("Excluir este registro?"))return;
