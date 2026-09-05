@@ -1,4 +1,4 @@
-# VIMAK CRM V6.18 — FINANCEIRO ENTERPRISE
+# VIMAK CRM V6.19 — MAQUININHAS & TAXAS PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -292,3 +292,14 @@ CFO Command Center inspirado em práticas de ERP corporativo:
 - Estrutura multi-entidade e multimoeda preparada para expansão.
 - Migration aditiva `005_finance_enterprise.sql`.
 - A implementação não substitui escrituração contábil/fiscal oficial nem integrações bancárias homologadas.
+
+
+## V6.19 — Maquininhas & Taxas PRO
+- Central de adquirência para InfinitePay, Mercado Pago, Leozinha e outras.
+- Taxas próprias por adquirente, bandeira, modalidade, parcelas, tarifa fixa, prazo e vigência.
+- Simulador que ranqueia a melhor maquininha pelo valor líquido real.
+- Precificação reversa: quanto cobrar para receber um líquido desejado.
+- Ledger de vendas, MDR/taxa efetiva, NSU, autorização e agenda de recebíveis.
+- Conciliação manual de liquidações.
+- Não há integração API bancária/adquirente inventada: taxas e vendas são cadastradas/importadas até existir API oficial/credenciais homologadas.
+- Migration aditiva `006_card_acquiring_pro.sql`.
