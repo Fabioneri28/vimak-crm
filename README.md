@@ -1,4 +1,4 @@
-# VIMAK CRM V6.10 — COMPRAS PRO
+# VIMAK CRM V6.11 — DOCUMENTOS & TEMPLATES PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -177,4 +177,16 @@ A policy existente isola os arquivos pelo primeiro diretório do caminho, que é
 - Fluxo de status até recebimento.
 - KPIs de compras, aberto, recebidos e atrasos.
 - Exportação CSV.
+- Nenhuma nova migration necessária.
+
+
+## V6.11 — Documentos & Templates PRO
+- Templates reais em `document_templates`.
+- Contrato, Proposta Comercial, Termo de Aceite, Garantia e outros tipos.
+- Editor profissional com variáveis inteligentes.
+- Preenchimento automático com Empresa, Cliente e Proposta.
+- Biblioteca inicial VIMAK com 4 modelos.
+- Visualização do documento antes da impressão.
+- Gerar PDF via diálogo de impressão do navegador.
+- Editar, duplicar, ativar/inativar e excluir.
 - Nenhuma nova migration necessária.
