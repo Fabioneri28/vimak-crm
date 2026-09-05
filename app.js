@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -148,11 +148,12 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p,pi,s,pa,as,i]=await Promise.all([
+  const [c,l,p,pi,pm,s,pa,as,i]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
     sb.from("proposals").select("*").order("created_at",{ascending:false}),
     sb.from("proposal_items").select("*").order("created_at",{ascending:true}),
+    sb.from("proposal_models").select("*").order("created_at",{ascending:false}),
     sb.from("suppliers").select("*").order("created_at",{ascending:false}),
     sb.from("partners").select("*").order("created_at",{ascending:false}),
     sb.from("after_sales_tickets").select("*").order("opened_at",{ascending:false}),
@@ -162,6 +163,7 @@ async function refreshCore(){
   cache.leads=l.data||[];
   cache.proposals=p.data||[];
   cache.proposalItems=pi.data||[];
+  cache.proposalModels=pm.data||[];
   cache.suppliers=s.data||[];
   cache.partners=pa.data||[];
   cache.afterSales=as.data||[];
@@ -1029,7 +1031,264 @@ async function deleteInput(id){
  if(error)return toast("Erro: "+error.message);
  toast("Insumo excluído");render();
 }
-function modelos(){return simpleTable("Modelos de Proposta","Módulo conectado na próxima expansão","",["Nome","Ambientes","Ações"],[])}
+let modelDraftItems=[];
+
+function proposalModelById(id){return cache.proposalModels.find(x=>x.id===id)}
+function proposalModelBody(x){return (x&&x.body&&typeof x.body==="object")?x.body:{}}
+function modelItemTotal(x){return Number(x.qty||0)*Number(x.unit_price||0)}
+function modelCostTotal(x){return Number(x.qty||0)*Number(x.cost||0)}
+function modelInputOptions(){
+  return cache.inputs.filter(x=>x.active!==false).map(i=>`<option value="${i.id}">${esc(i.name)} • ${money(i.unit_cost)} / ${esc(i.unit||"un")}</option>`).join("");
+}
+function modelForm(x={}){
+  const b=proposalModelBody(x);
+  return `<div class="proposal-editor model-editor">
+    <div class="proposal-head-grid">
+      <div class="field full"><label>Nome do modelo *</label><input id="mname" value="${esc(x.name||"")}" placeholder="Ex.: Cozinha Premium • Padrão VIMAK"></div>
+      <div class="field full"><label>Ambientes padrão</label><input id="menvs" value="${esc((x.environments||[]).join(", "))}" placeholder="Cozinha, Área Gourmet, Lavanderia"></div>
+      <div class="field"><label>Validade padrão (dias)</label><input id="mvalid" type="number" min="1" value="${Number(b.validity_days||15)}"></div>
+      <div class="field"><label>Prazo de entrega (dias)</label><input id="mdelivery" type="number" min="0" value="${Number(b.delivery_days||45)}"></div>
+      <div class="field"><label>Garantia (meses)</label><input id="mwarranty" type="number" min="0" value="${Number(b.warranty_months||60)}"></div>
+      <div class="field"><label>Status</label><select id="mactive"><option value="true" ${x.active!==false?"selected":""}>Ativo</option><option value="false" ${x.active===false?"selected":""}>Inativo</option></select></div>
+    </div>
+
+    <div class="proposal-items-toolbar">
+      <div class="field proposal-input-pick"><label>Adicionar Insumo ao modelo</label><select id="modelInputPick"><option value="">Selecione um insumo...</option>${modelInputOptions()}</select></div>
+      <button class="btn gold" type="button" onclick="addModelInputItem()">+ Adicionar insumo</button>
+      <button class="btn" type="button" onclick="addModelFreeItem()">+ Item livre</button>
+    </div>
+
+    <div class="proposal-items-card">
+      <div class="table-wrap">
+        <table class="table proposal-items-table">
+          <thead><tr><th>Ambiente</th><th>Descrição</th><th>Qtd.</th><th>Un.</th><th>Custo</th><th>Preço venda</th><th>Total</th><th></th></tr></thead>
+          <tbody id="modelItemRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="proposal-bottom-grid">
+      <div>
+        <div class="field"><label>Condições de pagamento padrão</label><textarea id="mpayment" rows="4" placeholder="Ex.: 40% entrada + saldo em 6x">${esc(b.payment_terms||"")}</textarea></div>
+        <div class="field" style="margin-top:10px"><label>Observações padrão</label><textarea id="mnotes" rows="5" placeholder="Textos e condições que entrarão automaticamente na proposta">${esc(b.notes||"")}</textarea></div>
+      </div>
+      <div class="proposal-totals">
+        <div class="field"><label>Desconto padrão (R$)</label><input id="mdiscount" type="number" min="0" step="0.01" value="${Number(b.discount||0)}" oninput="refreshModelDraft()"></div>
+        <div class="field"><label>Montagem padrão (R$)</label><input id="massembly" type="number" min="0" step="0.01" value="${Number(b.assembly_fee||0)}" oninput="refreshModelDraft()"></div>
+        <div class="field"><label>Frete padrão (R$)</label><input id="mfreight" type="number" min="0" step="0.01" value="${Number(b.freight||0)}" oninput="refreshModelDraft()"></div>
+        <div class="proposal-summary" id="modelSummary"></div>
+      </div>
+    </div>
+  </div>`;
+}
+function modelItemRow(x,idx){
+  return `<tr>
+    <td><input class="table-input" value="${esc(x.environment||"")}" placeholder="Cozinha" oninput="updateModelDraftItem(${idx},'environment',this.value)"></td>
+    <td><input class="table-input wide" value="${esc(x.description||"")}" placeholder="Descrição do item" oninput="updateModelDraftItem(${idx},'description',this.value)"></td>
+    <td><input class="table-input num" type="number" min="0" step="0.01" value="${Number(x.qty||1)}" oninput="updateModelDraftItem(${idx},'qty',this.value)"></td>
+    <td><input class="table-input unit" value="${esc(x.unit||"un")}" oninput="updateModelDraftItem(${idx},'unit',this.value)"></td>
+    <td><input class="table-input num" type="number" min="0" step="0.01" value="${Number(x.cost||0)}" oninput="updateModelDraftItem(${idx},'cost',this.value)"></td>
+    <td><input class="table-input num" type="number" min="0" step="0.01" value="${Number(x.unit_price||0)}" oninput="updateModelDraftItem(${idx},'unit_price',this.value)"></td>
+    <td><b class="goldtxt">${money(modelItemTotal(x))}</b></td>
+    <td><button class="btn sm danger" type="button" onclick="removeModelDraftItem(${idx})">×</button></td>
+  </tr>`;
+}
+function modelDraftMetrics(){
+  const subtotal=modelDraftItems.reduce((a,x)=>a+modelItemTotal(x),0);
+  const cost=modelDraftItems.reduce((a,x)=>a+modelCostTotal(x),0);
+  const discount=Number(document.getElementById("mdiscount")?.value||0);
+  const assembly=Number(document.getElementById("massembly")?.value||0);
+  const freight=Number(document.getElementById("mfreight")?.value||0);
+  const total=Math.max(0,subtotal-discount+assembly+freight);
+  const margin=total-cost;
+  const marginPct=total?margin/total*100:0;
+  return {subtotal,cost,discount,assembly,freight,total,margin,marginPct};
+}
+function refreshModelDraft(){
+  const rows=document.getElementById("modelItemRows");
+  if(rows)rows.innerHTML=modelDraftItems.length?modelDraftItems.map(modelItemRow).join(""):`<tr><td class="empty" colspan="8">Modelo sem itens. Adicione insumos ou itens livres.</td></tr>`;
+  const summary=document.getElementById("modelSummary");
+  if(summary){
+    const m=modelDraftMetrics();
+    summary.innerHTML=`
+      <div><span>Subtotal padrão</span><b>${money(m.subtotal)}</b></div>
+      <div><span>Custo estimado</span><b>${money(m.cost)}</b></div>
+      <div><span>Desconto</span><b>- ${money(m.discount)}</b></div>
+      <div><span>Montagem + frete</span><b>${money(m.assembly+m.freight)}</b></div>
+      <div class="proposal-total-line"><span>VALOR BASE</span><strong>${money(m.total)}</strong></div>
+      <div class="proposal-margin"><span>Margem estimada</span><b class="${m.margin>=0?"green":"red"}">${money(m.margin)} • ${m.marginPct.toFixed(1)}%</b></div>`;
+  }
+}
+function updateModelDraftItem(idx,key,value){
+  if(!modelDraftItems[idx])return;
+  modelDraftItems[idx][key]=["qty","cost","unit_price"].includes(key)?Number(value||0):value;
+  refreshModelDraft();
+}
+function addModelInputItem(){
+  const id=document.getElementById("modelInputPick")?.value;
+  if(!id)return toast("Selecione um insumo");
+  const i=cache.inputs.find(x=>x.id===id);if(!i)return;
+  modelDraftItems.push({
+    description:i.name,
+    environment:"",
+    qty:1,
+    unit:i.unit||"un",
+    cost:Number(i.unit_cost||0),
+    unit_price:Number(i.unit_cost||0),
+    metadata:{input_id:i.id,sku:i.sku||null,type:i.type||null,brand:i.brand||null}
+  });
+  refreshModelDraft();
+}
+function addModelFreeItem(){
+  modelDraftItems.push({description:"",environment:"",qty:1,unit:"un",cost:0,unit_price:0,metadata:{manual:true}});
+  refreshModelDraft();
+}
+function removeModelDraftItem(idx){modelDraftItems.splice(idx,1);refreshModelDraft()}
+function addProposalModel(){
+  modelDraftItems=[];
+  openModal("Novo Modelo de Proposta",modelForm(),`saveProposalModel()`);modal.classList.add("proposal-modal");setTimeout(refreshModelDraft,0);
+}
+function editProposalModel(id){
+  const x=proposalModelById(id);if(!x)return toast("Modelo não encontrado");
+  const b=proposalModelBody(x);
+  modelDraftItems=Array.isArray(b.items)?b.items.map(i=>({...i,metadata:i.metadata||{}})):[];
+  openModal("Editar Modelo de Proposta",modelForm(x),`saveProposalModel('${id}')`);modal.classList.add("proposal-modal");setTimeout(refreshModelDraft,0);
+}
+async function saveProposalModel(id=""){
+  const name=document.getElementById("mname")?.value.trim();
+  if(!name)return toast("Informe o nome do modelo");
+  if(modelDraftItems.some(x=>!String(x.description||"").trim()))return toast("Há item sem descrição");
+  const environments=(document.getElementById("menvs")?.value||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const body={
+    items:modelDraftItems,
+    validity_days:Number(document.getElementById("mvalid").value||15),
+    delivery_days:Number(document.getElementById("mdelivery").value||0),
+    warranty_months:Number(document.getElementById("mwarranty").value||0),
+    payment_terms:document.getElementById("mpayment").value.trim()||null,
+    notes:document.getElementById("mnotes").value.trim()||null,
+    discount:Number(document.getElementById("mdiscount").value||0),
+    assembly_fee:Number(document.getElementById("massembly").value||0),
+    freight:Number(document.getElementById("mfreight").value||0)
+  };
+  const payload={company_id:profile.company_id,name,environments,body,active:document.getElementById("mactive").value==="true"};
+  let error;
+  if(id){({error}=await sb.from("proposal_models").update(payload).eq("id",id));}
+  else{({error}=await sb.from("proposal_models").insert(payload));}
+  if(error)return toast("Erro: "+error.message);
+  modal.classList.remove("proposal-modal");closeModal();toast(id?"Modelo atualizado":"Modelo salvo na nuvem");render();
+}
+async function duplicateProposalModel(id){
+  const x=proposalModelById(id);if(!x)return;
+  const payload={company_id:profile.company_id,name:(x.name||"Modelo")+" • Cópia",environments:x.environments||[],body:x.body||{},active:true};
+  const {error}=await sb.from("proposal_models").insert(payload);
+  if(error)return toast("Erro: "+error.message);
+  toast("Modelo duplicado");render();
+}
+async function toggleProposalModel(id){
+  const x=proposalModelById(id);if(!x)return;
+  const {error}=await sb.from("proposal_models").update({active:!x.active}).eq("id",id);
+  if(error)return toast("Erro: "+error.message);
+  toast(!x.active?"Modelo ativado":"Modelo inativado");render();
+}
+async function deleteProposalModel(id){
+  const x=proposalModelById(id);if(!x)return;
+  if(!confirm(`Excluir o modelo "${x.name}"?`))return;
+  const {error}=await sb.from("proposal_models").delete().eq("id",id);
+  if(error)return toast("Erro: "+error.message);
+  toast("Modelo excluído");render();
+}
+function viewProposalModel(id){
+  const x=proposalModelById(id);if(!x)return;
+  const b=proposalModelBody(x),items=Array.isArray(b.items)?b.items:[];
+  const subtotal=items.reduce((a,i)=>a+modelItemTotal(i),0);
+  const total=Math.max(0,subtotal-Number(b.discount||0)+Number(b.assembly_fee||0)+Number(b.freight||0));
+  openModal(esc(x.name),`<div class="client-detail">
+    <div class="client-hero"><div class="client-avatar">M</div><div><span class="badge ${x.active?"ok":""}">${x.active?"Ativo":"Inativo"}</span><p>${esc((x.environments||[]).join(" • ")||"Modelo comercial")}</p></div></div>
+    <div class="detail-grid">
+      <div><label>Itens padrão</label><b>${items.length}</b></div>
+      <div><label>Valor base</label><b class="goldtxt">${money(total)}</b></div>
+      <div><label>Validade</label><b>${Number(b.validity_days||15)} dias</b></div>
+      <div><label>Entrega</label><b>${Number(b.delivery_days||0)||"—"} dias</b></div>
+      <div><label>Garantia</label><b>${Number(b.warranty_months||0)||"—"} meses</b></div>
+      <div><label>Criado em</label><b>${new Date(x.created_at).toLocaleDateString("pt-BR")}</b></div>
+    </div>
+    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Ambiente</th><th>Descrição</th><th>Qtd.</th><th>Venda</th><th>Total</th></tr></thead><tbody>
+      ${items.map(i=>`<tr><td>${esc(i.environment||"—")}</td><td>${esc(i.description||"")}</td><td>${Number(i.qty||0)} ${esc(i.unit||"")}</td><td>${money(i.unit_price)}</td><td><b class="goldtxt">${money(modelItemTotal(i))}</b></td></tr>`).join("")||`<tr><td class="empty" colspan="5">Modelo sem itens</td></tr>`}
+    </tbody></table></div></div>
+    <div class="detail-notes"><label>Condições de pagamento</label><p>${esc(b.payment_terms||"—")}</p></div>
+    <div class="detail-notes"><label>Observações padrão</label><p>${esc(b.notes||"—")}</p></div>
+    <div class="client-quick">
+      <button class="btn gold" onclick="closeModal();applyProposalModel('${id}')">Usar em nova proposta</button>
+      <button class="btn" onclick="closeModal();editProposalModel('${id}')">Editar modelo</button>
+      <button class="btn" onclick="closeModal();duplicateProposalModel('${id}')">Duplicar</button>
+    </div>
+  </div>`,"");
+}
+function applyProposalModel(id){
+  const x=proposalModelById(id);if(!x)return toast("Modelo não encontrado");
+  if(!cache.clients.length)return toast("Cadastre um cliente antes de criar uma proposta");
+  const b=proposalModelBody(x);
+  const days=Number(b.validity_days||15);
+  const d=new Date();d.setDate(d.getDate()+days);
+  modelDraftItems=[];
+  proposalDraftItems=(Array.isArray(b.items)?b.items:[]).map(i=>{
+    const y={...i,metadata:{...(i.metadata||{})}};
+    const inputId=y.metadata?.input_id;
+    const current=inputId?cache.inputs.find(z=>z.id===inputId):null;
+    if(current)y.cost=Number(current.unit_cost||y.cost||0);
+    delete y.id;delete y.proposal_id;delete y.company_id;delete y.created_at;delete y.updated_at;
+    return y;
+  });
+  openProposalEditor({
+    title:x.name,
+    status:"Orçado",
+    valid_until:d.toISOString().slice(0,10),
+    delivery_days:Number(b.delivery_days||45),
+    warranty_months:Number(b.warranty_months||60),
+    payment_terms:b.payment_terms||"",
+    notes:b.notes||"",
+    discount:Number(b.discount||0),
+    assembly_fee:Number(b.assembly_fee||0),
+    freight:Number(b.freight||0)
+  });
+  toast("Modelo aplicado. Selecione o cliente e revise os valores.");
+}
+function modelos(){
+  const ativos=cache.proposalModels.filter(x=>x.active).length;
+  const totalItens=cache.proposalModels.reduce((a,x)=>a+((proposalModelBody(x).items||[]).length),0);
+  const usados=cache.proposals.filter(p=>cache.proposalModels.some(m=>m.name===p.title)).length;
+  const rows=cache.proposalModels.map(x=>{
+    const b=proposalModelBody(x),items=Array.isArray(b.items)?b.items:[];
+    const subtotal=items.reduce((a,i)=>a+modelItemTotal(i),0);
+    const total=Math.max(0,subtotal-Number(b.discount||0)+Number(b.assembly_fee||0)+Number(b.freight||0));
+    return `<tr>
+      <td><button class="link-client" onclick="viewProposalModel('${x.id}')"><b>${esc(x.name)}</b></button><small>${items.length} item(ns) padrão</small></td>
+      <td>${esc((x.environments||[]).join(" • ")||"—")}</td>
+      <td><b class="goldtxt">${money(total)}</b></td>
+      <td>${Number(b.delivery_days||0)||"—"} dias</td>
+      <td><span class="badge ${x.active?"ok":""}">${x.active?"Ativo":"Inativo"}</span></td>
+      <td><div class="row-actions">
+        <button class="btn sm gold" onclick="applyProposalModel('${x.id}')">Aplicar</button>
+        <button class="btn sm" onclick="viewProposalModel('${x.id}')">Ver</button>
+        <button class="btn sm" onclick="editProposalModel('${x.id}')">Editar</button>
+        <button class="btn sm" onclick="duplicateProposalModel('${x.id}')">Duplicar</button>
+        <button class="btn sm" onclick="toggleProposalModel('${x.id}')">${x.active?"Inativar":"Ativar"}</button>
+        <button class="btn sm danger" onclick="deleteProposalModel('${x.id}')">Excluir</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+  return shell("Modelos de Proposta","Padronize propostas comerciais e crie orçamentos em poucos cliques",
+    `<button class="btn gold" onclick="addProposalModel()">+ Novo Modelo</button>`,
+    `<div class="grid g4 proposal-kpis">
+      <div class="card kpi"><label>Total de modelos</label><strong>${cache.proposalModels.length}</strong></div>
+      <div class="card kpi"><label>Modelos ativos</label><strong class="goldtxt">${ativos}</strong></div>
+      <div class="card kpi"><label>Itens padronizados</label><strong>${totalItens}</strong></div>
+      <div class="card kpi"><label>Propostas pelo modelo</label><strong>${usados}</strong></div>
+    </div>
+    <div class="notice model-notice"><b>Atalho comercial:</b> use um modelo pronto, selecione o cliente e ajuste somente os detalhes específicos do projeto.</div>
+    <div class="filters"><div class="field"><label>Buscar modelo</label><input placeholder="Nome, ambiente, status..." oninput="filterTable(this.value)"></div></div>
+    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Modelo</th><th>Ambientes</th><th>Valor base</th><th>Entrega</th><th>Status</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="6">Nenhum modelo cadastrado. Crie seu primeiro modelo de proposta.</td></tr>`}</tbody></table></div></div>`);
+}
 function medicoes(){return simpleTable("Medições Técnicas","Módulo conectado na próxima expansão","",["Cliente","Ambientes","Data","Ações"],[])}
 function compras(){return simpleTable("Compras","Módulo conectado na próxima expansão","",["Fornecedor","Valor","Status","Ações"],[])}
 function templates(){return simpleTable("Templates de Documentos","Módulo conectado na próxima expansão","",["Nome","Tipo","Ações"],[])}

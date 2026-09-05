@@ -1,4 +1,4 @@
-# VIMAK CRM V6.7 — PROPOSTAS PRO
+# VIMAK CRM V6.8 — MODELOS DE PROPOSTA PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -105,3 +105,25 @@ O cache do Service Worker foi alterado para `vimak-crm-v6-2-clientes-pro`.
 ### Banco de dados
 A V6.7 utiliza as tabelas `proposals` e `proposal_items` que já existem na migration inicial.
 Não é necessária uma nova migration para o módulo Propostas PRO.
+
+
+## V6.8 — Modelos de Proposta PRO
+
+- Cadastro real em `proposal_models`.
+- Modelos por ambiente e padrão comercial.
+- Itens do modelo com ambiente, descrição, quantidade, unidade, custo e preço.
+- Adição direta de Insumos PRO ao modelo.
+- Itens livres para serviços e composições.
+- Validade, prazo de entrega e garantia padrão.
+- Condições de pagamento e observações padronizadas.
+- Desconto, montagem e frete padrão.
+- Valor base e margem estimada do modelo.
+- Ativar/inativar, editar, visualizar, duplicar e excluir.
+- Botão **Aplicar** cria uma nova proposta usando o modelo.
+- Ao aplicar, o custo dos insumos é atualizado com o valor atual do cadastro.
+- Cliente é escolhido antes de salvar a nova proposta.
+- Preserva toda a V6.7 Propostas PRO e módulos anteriores.
+
+### Banco
+Utiliza a tabela `proposal_models`, que já existe desde a migration inicial.
+Nenhuma nova migration é necessária para esta versão.
