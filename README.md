@@ -1,4 +1,4 @@
-# VIMAK CRM V6.19 — MAQUININHAS & TAXAS PRO
+# VIMAK CRM V6.20 — LEADS & CRM INTELLIGENCE
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -303,3 +303,15 @@ CFO Command Center inspirado em práticas de ERP corporativo:
 - Conciliação manual de liquidações.
 - Não há integração API bancária/adquirente inventada: taxas e vendas são cadastradas/importadas até existir API oficial/credenciais homologadas.
 - Migration aditiva `006_card_acquiring_pro.sql`.
+
+
+## V6.20 — Leads & CRM Intelligence
+- Pipeline visual com as 7 etapas comerciais da VIMAK.
+- Drag & drop entre etapas.
+- Lead Score automático/manual, temperatura, origem, responsável, potencial e probabilidade.
+- Forecast ponderado e analytics por origem.
+- Central 360° do lead com histórico de interações e próximas ações.
+- WhatsApp contextual, registro de contatos e tarefas.
+- Alertas de leads sem contato e priorização por score.
+- Migration aditiva `007_leads_crm_intelligence.sql`.
+- Mantém os módulos V6.13–V6.19.
