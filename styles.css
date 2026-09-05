@@ -141,3 +141,11 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.hidden{display:
   .measurement-header-actions,.measurement-footer-actions,.measurement-footer-actions>div{width:100%;flex-direction:column}.measurement-header-actions .btn,.measurement-footer-actions .btn{width:100%}
   .measurement-room-grid,.measurement-tech-grid,.measurement-check-grid,.measurement-top-summary,.measurement-photo-guide{grid-template-columns:1fr}
 }
+
+/* ===== V6.10 COMPRAS PRO ===== */
+.purchase-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid #443721;background:linear-gradient(135deg,#1d1810,#111112);padding:18px;border-radius:11px;margin-bottom:12px}
+.purchase-hero h2{margin:7px 0 4px}.purchase-hero p{margin:0;color:#999288;font-size:10px}
+.purchase-shortcuts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.purchase-shortcuts button{text-align:left;border:1px solid #302c25;background:#121213;color:#eee;border-radius:9px;padding:13px;cursor:pointer;font-weight:800}.purchase-shortcuts button:hover{border-color:#765b2a;background:#19150f}.purchase-shortcuts span{display:block;color:#8e887e;font-size:8px;margin-top:4px;font-weight:500}
+.purchase-bottom{display:grid;grid-template-columns:1fr 280px;gap:12px;margin-top:12px}.purchase-total-box{border:1px solid #5c4725;background:#1b160e;border-radius:9px;padding:16px;display:flex;flex-direction:column;justify-content:center}.purchase-total-box span{font-size:9px;color:#a39a8c}.purchase-total-box strong{font-size:25px;color:var(--gold2);margin-top:5px}
+@media(max-width:850px){.purchase-shortcuts{grid-template-columns:1fr 1fr}.purchase-bottom{grid-template-columns:1fr}.purchase-hero{align-items:flex-start;flex-direction:column}}
+@media(max-width:520px){.purchase-shortcuts{grid-template-columns:1fr}}

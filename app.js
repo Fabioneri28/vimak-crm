@@ -12,7 +12,7 @@ const NAV=[
 ];
 const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
-let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],measurements:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
+let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],measurements:[],purchaseOrders:[],purchaseOrderItems:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
@@ -148,13 +148,15 @@ function syncChrome(){
 function buildNav(){nav.innerHTML=NAV.map(g=>`<div class="nav-title">${g[0]}</div>${g[1].filter(i=>can(i[0])).map(i=>`<button class="nav-btn ${page===i[0]?"active":""}" onclick="go('${i[0]}')"><span>${i[1]}</span>${i[2]}</button>`).join("")}`).join("")}
 function go(p){if(!can(p))return toast("Seu perfil não possui acesso");page=p;location.hash=p;render();sidebar.classList.remove("open");scrollTo(0,0)}
 async function refreshCore(){
-  const [c,l,p,pi,pm,m,s,pa,as,i]=await Promise.all([
+  const [c,l,p,pi,pm,m,po,poi,s,pa,as,i]=await Promise.all([
     sb.from("clients").select("*").order("created_at",{ascending:false}),
     sb.from("leads").select("*").order("created_at",{ascending:false}),
     sb.from("proposals").select("*").order("created_at",{ascending:false}),
     sb.from("proposal_items").select("*").order("created_at",{ascending:true}),
     sb.from("proposal_models").select("*").order("created_at",{ascending:false}),
     sb.from("measurements").select("*").order("measured_at",{ascending:false}),
+    sb.from("purchase_orders").select("*").order("ordered_at",{ascending:false}),
+    sb.from("purchase_order_items").select("*").order("created_at",{ascending:true}),
     sb.from("suppliers").select("*").order("created_at",{ascending:false}),
     sb.from("partners").select("*").order("created_at",{ascending:false}),
     sb.from("after_sales_tickets").select("*").order("opened_at",{ascending:false}),
@@ -166,6 +168,8 @@ async function refreshCore(){
   cache.proposalItems=pi.data||[];
   cache.proposalModels=pm.data||[];
   cache.measurements=m.data||[];
+  cache.purchaseOrders=po.data||[];
+  cache.purchaseOrderItems=poi.data||[];
   cache.suppliers=s.data||[];
   cache.partners=pa.data||[];
   cache.afterSales=as.data||[];
@@ -1870,7 +1874,121 @@ function medicoes(){
     <div class="filters"><div class="field"><label>Buscar medição</label><input placeholder="Código, cliente, proposta, ambiente..." oninput="filterTable(this.value)"></div></div>
     <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Nº / Data</th><th>Cliente / Projeto</th><th>Ambientes</th><th>Status</th><th>Arquivos</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="6">Nenhuma medição cadastrada. Clique em + Nova Medição.</td></tr>`}</tbody></table></div></div>`);
 }
-function compras(){return simpleTable("Compras","Módulo conectado na próxima expansão","",["Fornecedor","Valor","Status","Ações"],[])}
+
+let purchaseDraftItems=[];
+function purchaseOrderById(id){return cache.purchaseOrders.find(x=>x.id===id)}
+function purchaseSupplier(id){return cache.suppliers.find(x=>x.id===id)}
+function purchaseItems(id){return cache.purchaseOrderItems.filter(x=>x.purchase_order_id===id)}
+function purchaseProposal(id){return cache.proposals.find(x=>x.id===id)}
+function purchaseCode(x){return "PC-"+String(cache.purchaseOrders.indexOf(x)+1).padStart(5,"0")}
+function purchaseStatusClass(x){return x==="Recebido"?"ok":x==="Pedido enviado"?"blue":x==="Cancelado"?"bad":""}
+function purchaseSupplierOptions(selected=""){return cache.suppliers.filter(x=>x.active!==false).map(x=>`<option value="${x.id}" ${selected===x.id?"selected":""}>${esc(x.name)}</option>`).join("")}
+function purchaseProposalOptions(selected=""){return cache.proposals.map(x=>`<option value="${x.id}" ${selected===x.id?"selected":""}>${proposalNumber(x.number)} • ${esc(x.title)}</option>`).join("")}
+function purchaseInputOptions(){return cache.inputs.filter(x=>x.active!==false).map(x=>`<option value="${x.id}">${esc(x.name)} • ${money(x.unit_cost)} / ${esc(x.unit||"un")}</option>`).join("")}
+function purchaseDraftTotal(){return purchaseDraftItems.reduce((a,x)=>a+Number(x.qty||0)*Number(x.unit_cost||0),0)}
+function purchaseRow(x,i){return `<tr>
+<td><select class="table-input" onchange="purchaseDraftItems[${i}].input_id=this.value||null">${`<option value="">Item livre</option>`+cache.inputs.map(z=>`<option value="${z.id}" ${x.input_id===z.id?"selected":""}>${esc(z.name)}</option>`).join("")}</select></td>
+<td><input class="table-input wide" value="${esc(x.description||"")}" oninput="purchaseDraftItems[${i}].description=this.value"></td>
+<td><input class="table-input num" type="number" min="0" step=".01" value="${Number(x.qty||1)}" oninput="purchaseDraftItems[${i}].qty=Number(this.value||0);refreshPurchaseDraft()"></td>
+<td><input class="table-input num" type="number" min="0" step=".01" value="${Number(x.unit_cost||0)}" oninput="purchaseDraftItems[${i}].unit_cost=Number(this.value||0);refreshPurchaseDraft()"></td>
+<td><b class="goldtxt">${money(Number(x.qty||0)*Number(x.unit_cost||0))}</b></td>
+<td><button class="btn sm danger" onclick="purchaseDraftItems.splice(${i},1);refreshPurchaseDraft()">×</button></td></tr>`}
+function refreshPurchaseDraft(){
+ const b=document.getElementById("purchaseItemRows");if(b)b.innerHTML=purchaseDraftItems.length?purchaseDraftItems.map(purchaseRow).join(""):`<tr><td colspan="6" class="empty">Adicione insumos ao pedido.</td></tr>`;
+ const t=document.getElementById("purchaseTotal");if(t)t.textContent=money(purchaseDraftTotal());
+}
+function addPurchaseInput(){
+ const id=document.getElementById("purchaseInputPick")?.value;if(!id)return toast("Selecione um insumo");
+ const x=cache.inputs.find(i=>i.id===id);if(!x)return;
+ purchaseDraftItems.push({input_id:x.id,description:x.name,qty:1,unit_cost:Number(x.unit_cost||0)});refreshPurchaseDraft();
+}
+function addPurchaseFree(){purchaseDraftItems.push({input_id:null,description:"",qty:1,unit_cost:0});refreshPurchaseDraft()}
+function importProposalToPurchase(){
+ const id=document.getElementById("purchaseProposal")?.value;if(!id)return toast("Selecione uma proposta");
+ const items=cache.proposalItems.filter(x=>x.proposal_id===id);
+ if(!items.length)return toast("A proposta não possui itens");
+ items.forEach(x=>purchaseDraftItems.push({input_id:x.input_id||null,description:x.description,qty:Number(x.qty||1),unit_cost:Number(x.cost||x.unit_cost||0)}));
+ refreshPurchaseDraft();toast("Itens da proposta adicionados ao pedido");
+}
+function purchaseForm(x={}){
+ return `<div class="purchase-editor">
+ <div class="form-grid">
+  <div class="field"><label>Fornecedor *</label><select id="purchaseSupplier"><option value="">Selecione...</option>${purchaseSupplierOptions(x.supplier_id)}</select></div>
+  <div class="field"><label>Proposta / Projeto</label><select id="purchaseProposal"><option value="">Sem vínculo</option>${purchaseProposalOptions(x.proposal_id)}</select></div>
+  <div class="field"><label>Status</label><select id="purchaseStatus">${["Aberto","Cotação","Aguardando aprovação","Pedido enviado","Parcialmente recebido","Recebido","Cancelado"].map(v=>`<option ${x.status===v?"selected":""}>${v}</option>`).join("")}</select></div>
+  <div class="field"><label>Previsão de entrega</label><input id="purchaseExpected" type="date" value="${x.expected_at?x.expected_at.slice(0,10):""}"></div>
+  <div class="field full"><label>Chave NF-e</label><input id="purchaseInvoiceKey" value="${esc(x.invoice_key||"")}" placeholder="44 dígitos — opcional"></div>
+ </div>
+ <div class="proposal-items-toolbar">
+  <div class="field proposal-input-pick"><label>Adicionar do cadastro de Insumos</label><select id="purchaseInputPick"><option value="">Selecione...</option>${purchaseInputOptions()}</select></div>
+  <button class="btn gold" onclick="addPurchaseInput()">+ Insumo</button><button class="btn" onclick="addPurchaseFree()">+ Item livre</button><button class="btn" onclick="importProposalToPurchase()">Importar itens da proposta</button>
+ </div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Insumo</th><th>Descrição</th><th>Qtd.</th><th>Custo unit.</th><th>Total</th><th></th></tr></thead><tbody id="purchaseItemRows"></tbody></table></div></div>
+ <div class="purchase-bottom"><div class="field"><label>Observações / condições comerciais</label><textarea id="purchaseNotes" rows="5">${esc(x.notes||"")}</textarea></div><div class="purchase-total-box"><span>TOTAL DO PEDIDO</span><strong id="purchaseTotal">${money(purchaseDraftTotal())}</strong></div></div>
+ </div>`;
+}
+function addPurchase(){purchaseDraftItems=[];openModal("Novo Pedido de Compra",purchaseForm(),`savePurchase()`);modal.classList.add("proposal-modal");setTimeout(refreshPurchaseDraft,0)}
+function editPurchase(id){
+ const x=purchaseOrderById(id);if(!x)return;
+ purchaseDraftItems=purchaseItems(id).map(i=>({id:i.id,input_id:i.input_id,description:i.description,qty:Number(i.qty),unit_cost:Number(i.unit_cost)}));
+ openModal(`Editar ${purchaseCode(x)}`,purchaseForm(x),`savePurchase('${id}')`);modal.classList.add("proposal-modal");setTimeout(refreshPurchaseDraft,0)
+}
+async function savePurchase(id=""){
+ const supplier_id=document.getElementById("purchaseSupplier")?.value;if(!supplier_id)return toast("Selecione o fornecedor");
+ if(!purchaseDraftItems.length)return toast("Adicione ao menos um item");
+ if(purchaseDraftItems.some(x=>!String(x.description||"").trim()))return toast("Há item sem descrição");
+ const total=purchaseDraftTotal();
+ const payload={company_id:profile.company_id,supplier_id,proposal_id:document.getElementById("purchaseProposal").value||null,status:document.getElementById("purchaseStatus").value,total,invoice_key:document.getElementById("purchaseInvoiceKey").value.trim()||null,notes:document.getElementById("purchaseNotes").value.trim()||null,expected_at:document.getElementById("purchaseExpected").value?new Date(document.getElementById("purchaseExpected").value+"T12:00:00").toISOString():null,created_by:session.user.id};
+ let orderId=id,error;
+ if(id){({error}=await sb.from("purchase_orders").update(payload).eq("id",id));if(!error){const r=await sb.from("purchase_order_items").delete().eq("purchase_order_id",id);error=r.error}}
+ else{const r=await sb.from("purchase_orders").insert(payload).select("id").single();error=r.error;orderId=r.data?.id}
+ if(error)return toast("Erro: "+error.message);
+ const rows=purchaseDraftItems.map(i=>({company_id:profile.company_id,purchase_order_id:orderId,input_id:i.input_id||null,description:i.description,qty:Number(i.qty||0),unit_cost:Number(i.unit_cost||0),total:Number(i.qty||0)*Number(i.unit_cost||0)}));
+ const ins=await sb.from("purchase_order_items").insert(rows);if(ins.error)return toast("Pedido salvo, mas houve erro nos itens: "+ins.error.message);
+ closeModal();toast(id?"Pedido atualizado":"Pedido de compra criado");render()
+}
+async function purchaseSetStatus(id,status){
+ const patch={status};if(status==="Recebido")patch.received_at=new Date().toISOString();
+ const {error}=await sb.from("purchase_orders").update(patch).eq("id",id);if(error)return toast("Erro: "+error.message);
+ toast("Status atualizado");render()
+}
+async function deletePurchase(id){
+ const x=purchaseOrderById(id);if(!x||!confirm(`Excluir ${purchaseCode(x)}?`))return;
+ const {error}=await sb.from("purchase_orders").delete().eq("id",id);if(error)return toast("Erro: "+error.message);toast("Pedido excluído");render()
+}
+function viewPurchase(id){
+ const x=purchaseOrderById(id);if(!x)return;const sup=purchaseSupplier(x.supplier_id),prop=purchaseProposal(x.proposal_id),it=purchaseItems(id);
+ openModal(purchaseCode(x),`<div class="client-detail">
+ <div class="client-hero"><div class="client-avatar">C</div><div><span class="badge ${purchaseStatusClass(x.status)}">${esc(x.status)}</span><h3>${esc(sup?.name||"Fornecedor")}</h3><p>${esc(prop?.title||"Compra avulsa")}</p></div></div>
+ <div class="detail-grid"><div><label>Total</label><b class="goldtxt">${money(x.total)}</b></div><div><label>Pedido em</label><b>${new Date(x.ordered_at).toLocaleDateString("pt-BR")}</b></div><div><label>Previsão</label><b>${x.expected_at?new Date(x.expected_at).toLocaleDateString("pt-BR"):"—"}</b></div><div><label>NF-e</label><b>${esc(x.invoice_key||"—")}</b></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Item</th><th>Qtd.</th><th>Custo</th><th>Total</th></tr></thead><tbody>${it.map(i=>`<tr><td>${esc(i.description)}</td><td>${Number(i.qty)}</td><td>${money(i.unit_cost)}</td><td><b>${money(i.total)}</b></td></tr>`).join("")}</tbody></table></div></div>
+ <div class="detail-notes"><label>Observações</label><p>${esc(x.notes||"—")}</p></div>
+ <div class="client-quick"><button class="btn gold" onclick="closeModal();editPurchase('${id}')">Editar</button><button class="btn" onclick="purchaseSetStatus('${id}','Pedido enviado');closeModal()">Marcar enviado</button><button class="btn" onclick="purchaseSetStatus('${id}','Recebido');closeModal()">Receber pedido</button></div></div>`,"")
+}
+function purchaseCsv(){
+ const lines=[["Pedido","Fornecedor","Proposta","Status","Total","Pedido em","Previsão"]];
+ cache.purchaseOrders.forEach(x=>lines.push([purchaseCode(x),purchaseSupplier(x.supplier_id)?.name||"",purchaseProposal(x.proposal_id)?.title||"",x.status,x.total,x.ordered_at,x.expected_at||""]));
+ const csv=lines.map(r=>r.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(";")).join("\n");
+ const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv"}));a.download="compras_vimak.csv";a.click();URL.revokeObjectURL(a.href)
+}
+function compras(){
+ const total=cache.purchaseOrders.reduce((a,x)=>a+Number(x.total||0),0);
+ const aberto=cache.purchaseOrders.filter(x=>!["Recebido","Cancelado"].includes(x.status)).reduce((a,x)=>a+Number(x.total||0),0);
+ const recebidos=cache.purchaseOrders.filter(x=>x.status==="Recebido").length;
+ const atrasados=cache.purchaseOrders.filter(x=>x.expected_at&&new Date(x.expected_at)<new Date()&&!["Recebido","Cancelado"].includes(x.status)).length;
+ const rows=cache.purchaseOrders.map(x=>{const sup=purchaseSupplier(x.supplier_id),prop=purchaseProposal(x.proposal_id);return `<tr>
+ <td><button class="link-client" onclick="viewPurchase('${x.id}')"><b>${purchaseCode(x)}</b></button><small>${new Date(x.ordered_at).toLocaleDateString("pt-BR")}</small></td>
+ <td><b>${esc(sup?.name||"—")}</b></td><td>${esc(prop?.title||"Compra avulsa")}</td><td><b class="goldtxt">${money(x.total)}</b></td>
+ <td>${x.expected_at?new Date(x.expected_at).toLocaleDateString("pt-BR"):"—"}</td><td><span class="badge ${purchaseStatusClass(x.status)}">${esc(x.status)}</span></td>
+ <td><div class="row-actions"><button class="btn sm gold" onclick="viewPurchase('${x.id}')">Ver</button><button class="btn sm" onclick="editPurchase('${x.id}')">Editar</button><button class="btn sm danger" onclick="deletePurchase('${x.id}')">Excluir</button></div></td></tr>`}).join("");
+ return shell("Compras PRO","Controle de pedidos, fornecedores, insumos, projetos e recebimentos em uma única operação",
+ `<button class="btn" onclick="purchaseCsv()">Exportar CSV</button><button class="btn gold" onclick="addPurchase()">+ Novo Pedido</button>`,
+ `<div class="purchase-hero"><div><span class="measurement-version">V6.10 • COMPRAS PRO</span><h2>Da proposta aprovada ao material recebido.</h2><p>Compre com rastreabilidade, custo real e vínculo direto ao projeto.</p></div><button class="btn gold" onclick="addPurchase()">+ Novo Pedido de Compra</button></div>
+ <div class="grid g4 proposal-kpis"><div class="card kpi"><label>Compras registradas</label><strong>${money(total)}</strong></div><div class="card kpi"><label>Em aberto</label><strong class="goldtxt">${money(aberto)}</strong></div><div class="card kpi"><label>Pedidos recebidos</label><strong>${recebidos}</strong></div><div class="card kpi"><label>Entregas atrasadas</label><strong class="${atrasados?"red":""}">${atrasados}</strong></div></div>
+ <div class="purchase-shortcuts"><button onclick="addPurchase()">🛒 Novo pedido<span>Fornecedor + itens</span></button><button onclick="toast('Selecione uma proposta dentro do Novo Pedido e use Importar itens da proposta')">📋 Comprar por proposta<span>Importe itens do projeto</span></button><button onclick="location.hash='#/fornecedores'">🏭 Fornecedores<span>Cadastro e contatos</span></button><button onclick="location.hash='#/insumos'">▦ Insumos<span>Custos e materiais</span></button></div>
+ <div class="filters"><div class="field"><label>Buscar compra</label><input placeholder="Pedido, fornecedor, proposta, status..." oninput="filterTable(this.value)"></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Pedido</th><th>Fornecedor</th><th>Proposta / Projeto</th><th>Valor</th><th>Previsão</th><th>Status</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td colspan="7" class="empty">Nenhum pedido de compra. Clique em + Novo Pedido.</td></tr>`}</tbody></table></div></div>`)
+}
 function templates(){return simpleTable("Templates de Documentos","Módulo conectado na próxima expansão","",["Nome","Tipo","Ações"],[])}
 function kanban(){return shell("Kanban de Produção","Estrutura do banco já preparada para production_projects","",`<div class="pipeline" style="grid-template-columns:repeat(5,minmax(190px,1fr))">${["Orçado","Aprovado / Medição","Em Produção","Em Montagem","Entregue"].map(s=>`<div class="stage"><div class="stage-head">${s}<b class="goldtxt">0</b></div></div>`).join("")}</div>`)}
 function corte(){return simpleTable("Planos de Corte","Tabela cutting_plans pronta no Supabase","",["Plano","Projeto","Aproveitamento","Status"],[])}

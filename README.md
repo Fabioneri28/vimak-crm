@@ -1,4 +1,4 @@
-# VIMAK CRM V6.9 — MEDIÇÕES TÉCNICAS PRO
+# VIMAK CRM V6.10 — COMPRAS PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -166,3 +166,15 @@ Usa a tabela `measurements`, já existente na migration inicial. Não exige alte
 ### Storage
 A V6.9 utiliza o bucket privado `crm-documents`. O arquivo `supabase/measurement_storage.sql` documenta a configuração.
 A policy existente isola os arquivos pelo primeiro diretório do caminho, que é o `company_id`.
+
+
+## V6.10 — Compras PRO
+- Pedidos de compra reais em `purchase_orders` e `purchase_order_items`.
+- Fornecedor e proposta/projeto vinculados.
+- Importação de itens da proposta para o pedido.
+- Adição de Insumos PRO e itens livres.
+- Custos, quantidades, total automático, previsão, NF-e e observações.
+- Fluxo de status até recebimento.
+- KPIs de compras, aberto, recebidos e atrasos.
+- Exportação CSV.
+- Nenhuma nova migration necessária.
