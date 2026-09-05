@@ -1,4 +1,4 @@
-# VIMAK CRM V6.16 — EQUIPES DE MONTAGEM PRO
+# VIMAK CRM V6.17 — AGENDA DE MONTAGEM PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -265,3 +265,17 @@ Para produção SaaS, tokens Cortecloud devem ficar em backend/Edge Function, nu
 - Busca e filtros operacionais.
 - Migration aditiva `003_installation_teams_pro.sql` adiciona apenas `metadata jsonb`.
 - Preserva V6.13 SmartCut, V6.14 Zero Waste e V6.15 Cortecloud.
+
+
+## V6.17 — Agenda de Montagem PRO
+- Torre de Controle com visualizações Dia, Semana, Mês e Lista.
+- KPIs de montagens do dia, próximas instalações, conflitos e atrasos.
+- Filtros por equipe, status e busca operacional.
+- Agendamento ligado a cliente, proposta/projeto e Equipe PRO V6.16.
+- Detecção de sobreposição de horários por equipe antes de salvar.
+- Sugestão de equipes considerando conflito, nota e carga mensal.
+- Endereço, ambientes, cidade, contato, volumes, dias previstos e instruções.
+- Checklist pré-montagem: medição, produção, ferragens e confirmação do cliente.
+- Central da Ordem de Montagem com início/conclusão rápida.
+- Painel lateral de capacidade e próxima montagem por equipe.
+- Migration aditiva `004_installation_schedule_pro.sql`.
