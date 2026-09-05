@@ -1,4 +1,4 @@
-# VIMAK CRM V6.14 — ZERO WASTE MDF
+# VIMAK CRM V6.15 — INTEGRAÇÃO CORTECLOUD PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -233,3 +233,18 @@ A policy existente isola os arquivos pelo primeiro diretório do caminho, que é
 - Sem migration nova.
 
 O objetivo é maximizar o reaproveitamento; 100% físico não é garantível devido a serra, refilo, defeitos, veio e formatos irregulares.
+
+
+## V6.15 — Integração Cortecloud PRO
+- Logo oficial VIMAK incorporada em `assets/vimak-logo.jpg`.
+- Hub Cortecloud conectado ao SmartCut V6.13 e Zero Waste V6.14.
+- Importação de CSV/TXT/XML de Promob, Corte Certo, SketchUp/OpenCutList e listas genéricas.
+- Pré-visualização de peças, materiais, dimensões e área.
+- Simulação usando o motor SmartCut antes do envio.
+- Exportação de lista para fluxo de importação do Cortecloud.
+- Configuração de ambiente/central/token de testes na tabela `integrations`.
+- API direta mantida em modo seguro até obtenção de token oficial e homologação.
+- Nenhuma migration nova necessária.
+
+### Segurança
+Para produção SaaS, tokens Cortecloud devem ficar em backend/Edge Function, nunca em repositório público ou JavaScript do navegador.
