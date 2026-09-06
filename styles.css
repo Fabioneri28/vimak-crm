@@ -212,3 +212,25 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.hidden{display:
 .fin-income{border-color:#355f48!important;color:#b7dfc2!important;background:#102019!important}.fin-expense{border-color:#6b4038!important;color:#e2b0a7!important;background:#211411!important}
 .fin-quick-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:10px 0}.fin-quick-strip button{border:1px solid #3a352d;background:linear-gradient(180deg,#17191a,#101213);padding:10px;border-radius:8px;text-align:left;color:#fff;cursor:pointer}.fin-quick-strip button:hover{border-color:#9b7331;transform:translateY(-1px)}.fin-quick-strip b,.fin-quick-strip span{display:block}.fin-quick-strip b{color:#e1b45b;font-size:9px}.fin-quick-strip span{font-size:6px;color:#8f887e;margin-top:4px}.fin-quick-modal{display:grid;gap:12px}.fin-quick-type{display:flex;justify-content:space-between;align-items:center;border:1px solid #3b352b;padding:10px 12px;border-radius:8px}.fin-quick-type span{font-size:6px;letter-spacing:.14em}.fin-quick-type b{font-size:16px}.fin-quick-type.income{background:#102019;border-color:#31563f}.fin-quick-type.income b{color:#a9d9b7}.fin-quick-type.expense{background:#211411;border-color:#653e37}.fin-quick-type.expense b{color:#e0a99e}.fin-quick-preview{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.fin-quick-preview>div{border:1px solid #34312b;background:#101213;border-radius:7px;padding:9px}.fin-quick-preview span,.fin-quick-preview b{display:block}.fin-quick-preview span{font-size:6px;color:#7f786e}.fin-quick-preview b{font-size:10px;color:#dfb35c;margin-top:4px}
 @media(max-width:850px){.fin-quick-strip{grid-template-columns:1fr 1fr}.fin-quick-preview{grid-template-columns:1fr}.page-head .actions{flex-wrap:wrap}}
+
+/* ===== V6.24.7 • ETIQUETAS DE PRODUÇÃO ===== */
+.label-pro{min-width:0}
+.label-pro-hero{display:flex;justify-content:space-between;align-items:center;padding:18px;border:1px solid rgba(201,151,63,.35);border-radius:14px;background:linear-gradient(135deg,rgba(201,151,63,.12),rgba(255,255,255,.02));margin-bottom:14px}
+.label-pro-hero span{font-size:10px;letter-spacing:1.4px;color:var(--gold)}
+.label-pro-hero h2{margin:4px 0 2px;font-size:22px}
+.label-pro-hero p{margin:0;color:var(--gray)}
+.label-pro-count{min-width:90px;text-align:center;border:1px solid rgba(201,151,63,.35);border-radius:12px;padding:10px}
+.label-pro-count b{font-size:28px;color:var(--gold-light);display:block}.label-pro-count span{font-size:9px}
+.label-pro-form{margin-bottom:12px}
+.label-pro-actions{display:flex;gap:8px;justify-content:flex-end;margin-bottom:14px}
+.label-preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-height:520px;overflow:auto;padding-right:4px}
+.prod-label{background:#fff;color:#111;border:1.5px solid #111;border-radius:6px;display:grid;grid-template-columns:minmax(0,1fr) 62px;min-height:270px;overflow:hidden}
+.prod-label-main{padding:12px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.prod-label-head{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #222;padding-bottom:6px}
+.prod-label-head b{font-size:20px;letter-spacing:1px}.prod-label-head span{display:block;font-size:8px;letter-spacing:1px}
+.prod-label-id{text-align:right}.prod-label-id small{display:block;font-size:9px}.prod-label-id strong{font-size:18px}
+.prod-label-info{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px}.prod-label-info span,.prod-label-spec span,.prod-label-code>span{font-size:8px;color:#666;display:block}.prod-label-info b{font-size:11px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prod-label-spec{display:grid;grid-template-columns:1.35fr 1.3fr .55fr .8fr;gap:8px;border-top:1px solid #aaa;border-bottom:1px solid #aaa;padding:6px 0}.prod-label-spec strong,.prod-label-spec b{font-size:10px}
+.label-barcode{display:block;width:100%;height:48px}.prod-label-code .label-barcode{height:42px}
+.prod-label-side{border-left:1px solid #111;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}.prod-label-side .side-code{width:230px;transform:rotate(90deg)}.prod-label-side b{position:absolute;right:3px;bottom:6px;writing-mode:vertical-rl;font-size:8px}
+@media(max-width:900px){.label-preview-grid{grid-template-columns:1fr}.prod-label{min-height:250px}}

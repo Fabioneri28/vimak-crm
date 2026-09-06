@@ -2376,7 +2376,7 @@ function ccHistory(){const rows=ccRecords().map(x=>`<tr><td>${new Date(x.created
 function ccSettings(){const c=ccData(ccConfig());return `<div class="card cc-settings"><h3>Configuração Cortecloud</h3><div class="notice">API direta somente após credenciais e homologação oficial. O token deve migrar para backend/Edge Function antes de produção.</div><div class="form-grid"><div class="field"><label>Endpoint / ambiente fornecido</label><input id="ccEndpoint" value="${esc(c.endpoint||'')}" placeholder="Fornecido na homologação"></div><div class="field"><label>Central / identificação</label><input id="ccCentral" value="${esc(c.central||'')}" placeholder="Central vinculada"></div><div class="field full"><label>Token de testes</label><input id="ccToken" type="password" placeholder="${c.has_token?'Token já configurado — informe somente para substituir':'Cole apenas token de TESTES'}"></div></div><button class="btn gold" onclick="ccSaveConfig()">Salvar configuração</button></div>`}
 function ccSendView(){return `<div class="cc-workspace"><section class="cc-left"><h3>1. Selecione a origem da lista de peças</h3><div class="cc-sources">${[['Promob','P','XML / TXT / CSV'],['SketchUp','S','CSV / OpenCutList'],['Corte Certo','CC','CSV / XML'],['Arquivo Manual','▤','CSV / TXT / XML']].map(x=>`<button class="cc-source ${ccDraft.source===x[0]?'active':''}" data-source="${x[0]}" onclick="ccSetSource('${x[0]}')"><b>${x[1]}</b><strong>${x[0]}</strong><span>${x[2]}</span></button>`).join('')}</div><h3>2. Envie o arquivo</h3><label class="cc-drop"><input type="file" accept=".csv,.txt,.tsv,.xml" onchange="ccParseFile(this)"><b>☁</b><strong>Clique para selecionar o arquivo</strong><span>CSV, TXT, XML • listas exportadas de softwares compatíveis</span></label><h3>3. Parâmetros de corte</h3><div class="form-grid cc-params"><div class="field"><label>Chapa L</label><input id="ccSheetW" value="2750"></div><div class="field"><label>Chapa A</label><input id="ccSheetH" value="1850"></div><div class="field"><label>Serra</label><input id="ccKerf" value="4"></div><div class="field"><label>Refilo</label><input id="ccTrim" value="2"></div></div><div class="cc-toggles"><label><input type="checkbox" checked> Considerar sobras V6.14</label><label><input type="checkbox" checked> Agrupar material/espessura</label><label><input type="checkbox" checked> Otimizar aproveitamento</label><label><input id="ccGrain" type="checkbox" checked> Respeitar veio</label></div><h3>4. Preparar para Cortecloud</h3><div class="client-quick"><button class="btn gold" onclick="ccSend()">⇧ Enviar / Preparar Cortecloud</button><button class="btn" onclick="ccSimulate()">⌕ Simular Otimização</button><button class="btn" onclick="ccExportPayload()">▤ Exportar Lista</button></div></section><section class="cc-right"><div class="cc-link-card"><div class="cc-cloud">☁ <strong>cortecloud</strong></div><span>⇄</span><img src="assets/vimak-logo.jpg" alt="VIMAK Planejados"><div class="cc-connect"><b class="badge ${ccConfig()?'ok':'gold'}">${ccConfig()?'Configurado':'Aguardando configuração'}</b></div></div><div class="card"><h3>Pré-visualização da lista</h3><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Peça</th><th>Comp.</th><th>Larg.</th><th>Esp.</th><th>Material</th><th>Qtde</th></tr></thead><tbody id="ccPreviewRows"></tbody></table></div><div id="ccPreviewStats" class="cc-preview-stats"></div></div><div class="cc-zero"><b>V6.14 ZERO WASTE ATIVO</b><span>Antes de abrir uma chapa nova, use o Estoque de Sobras + SmartCut para verificar reaproveitamento.</span></div></section></div>`}
 function cutSources(){return ['Manual','Promob','Cortecloud','SketchUp / OpenCutList','Corte Certo','CSV / Excel','XML / TXT']}
-function cutEditor(x={}){const d=x.data||{},st=d.settings||cutDraft.settings;cutDraft={pieces:(d.pieces||[]).map(z=>({...z,id:z.id||crypto.randomUUID()})),layouts:d.layouts||[],settings:{...cutDraft.settings,...st},source:x.source||'Manual'};return `<div class="cut-editor"><div class="cut-editor-head"><div class="form-grid"><div class="field"><label>Nome do plano *</label><input id="cutName" value="${esc(x.name||'')}"></div><div class="field"><label>Projeto de produção</label><select id="cutProject"><option value="">Sem vínculo</option>${cutProjectOptions(x.production_project_id)}</select></div><div class="field"><label>Origem / Integração</label><select id="cutSource">${cutSources().map(v=>`<option ${cutDraft.source===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label>Status</label><select id="cutStatus">${['Rascunho','Importado','Otimizado','Liberado para Corte','Concluído'].map(v=>`<option ${x.status===v?'selected':''}>${v}</option>`).join('')}</select></div></div></div><div class="cut-integrations"><label class="cut-upload"><input type="file" accept=".csv,.txt,.xml,.tsv" onchange="cutImportFile(this)"><b>⇧ Importar arquivo</b><span>Promob • Cortecloud • Corte Certo • CSV/TXT/XML</span></label><button onclick="cutAddPiece()"><b>＋ Peça manual</b><span>Cadastre medidas individualmente</span></button><button onclick="cutLoadDemo()"><b>◇ Projeto exemplo</b><span>Teste imediato do otimizador</span></button></div><div class="cut-tabs-grid"><section><div class="cut-section-title"><div><h3>Lista de Peças</h3><span id="cutPieceCount">${cutDraft.pieces.length} peças</span></div></div><div class="table-wrap cut-pieces-table"><table class="table"><thead><tr><th>Peça</th><th>Material</th><th>Comp.</th><th>Larg.</th><th>Esp.</th><th>Veio</th><th>Fita</th><th></th></tr></thead><tbody id="cutPieceRows"></tbody></table></div></section><aside class="cut-settings"><h3>Parâmetros de Corte</h3><div class="form-grid"><div class="field"><label>Chapa L (mm)</label><input id="cutSheetW" type="number" value="${st.sheetW}"></div><div class="field"><label>Chapa A (mm)</label><input id="cutSheetH" type="number" value="${st.sheetH}"></div><div class="field"><label>Serra (mm)</label><input id="cutKerf" type="number" step=".1" value="${st.kerf}"></div><div class="field"><label>Refilo (mm)</label><input id="cutTrim" type="number" value="${st.trim}"></div><div class="field"><label>Sobra mín. L</label><input id="cutMinRemnantW" type="number" value="${st.minRemnantW}"></div><div class="field"><label>Sobra mín. A</label><input id="cutMinRemnantH" type="number" value="${st.minRemnantH}"></div></div><label class="cut-check"><input id="cutGrain" type="checkbox" ${st.grain?'checked':''}> Respeitar sentido do veio</label><button class="btn gold cut-optimize" onclick="cutOptimize()">⚙ OTIMIZAR PLANO</button><p class="cut-algo-note">Otimização guilhotina determinística com agrupamento por material/espessura, serra, refilo, rotação e sobras.</p></aside></div><div id="cutResultKpis" class="cut-result-kpis"></div><div id="cutPreview" class="cut-preview"></div><div class="cut-export-bar"><b>Exportação / Interoperabilidade</b><button class="btn" onclick="cutExport('generic')">CSV Universal</button><button class="btn" onclick="cutExport('cortecerto')">Corte Certo</button><button class="btn" onclick="cutExport('cortecloud')">Cortecloud</button><button class="btn" onclick="cutExport('opencutlist')">SketchUp / OpenCutList</button><button class="btn" onclick="cutPrint()">Imprimir Plano</button></div></div>`}
+function cutEditor(x={}){const d=x.data||{},st=d.settings||cutDraft.settings;cutDraft={pieces:(d.pieces||[]).map(z=>({...z,id:z.id||crypto.randomUUID()})),layouts:d.layouts||[],settings:{...cutDraft.settings,...st},source:x.source||'Manual'};return `<div class="cut-editor"><div class="cut-editor-head"><div class="form-grid"><div class="field"><label>Nome do plano *</label><input id="cutName" value="${esc(x.name||'')}"></div><div class="field"><label>Projeto de produção</label><select id="cutProject"><option value="">Sem vínculo</option>${cutProjectOptions(x.production_project_id)}</select></div><div class="field"><label>Origem / Integração</label><select id="cutSource">${cutSources().map(v=>`<option ${cutDraft.source===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label>Status</label><select id="cutStatus">${['Rascunho','Importado','Otimizado','Liberado para Corte','Concluído'].map(v=>`<option ${x.status===v?'selected':''}>${v}</option>`).join('')}</select></div></div></div><div class="cut-integrations"><label class="cut-upload"><input type="file" accept=".csv,.txt,.xml,.tsv" onchange="cutImportFile(this)"><b>⇧ Importar arquivo</b><span>Promob • Cortecloud • Corte Certo • CSV/TXT/XML</span></label><button onclick="cutAddPiece()"><b>＋ Peça manual</b><span>Cadastre medidas individualmente</span></button><button onclick="cutLoadDemo()"><b>◇ Projeto exemplo</b><span>Teste imediato do otimizador</span></button></div><div class="cut-tabs-grid"><section><div class="cut-section-title"><div><h3>Lista de Peças</h3><span id="cutPieceCount">${cutDraft.pieces.length} peças</span></div></div><div class="table-wrap cut-pieces-table"><table class="table"><thead><tr><th>Peça</th><th>Material</th><th>Comp.</th><th>Larg.</th><th>Esp.</th><th>Veio</th><th>Fita</th><th></th></tr></thead><tbody id="cutPieceRows"></tbody></table></div></section><aside class="cut-settings"><h3>Parâmetros de Corte</h3><div class="form-grid"><div class="field"><label>Chapa L (mm)</label><input id="cutSheetW" type="number" value="${st.sheetW}"></div><div class="field"><label>Chapa A (mm)</label><input id="cutSheetH" type="number" value="${st.sheetH}"></div><div class="field"><label>Serra (mm)</label><input id="cutKerf" type="number" step=".1" value="${st.kerf}"></div><div class="field"><label>Refilo (mm)</label><input id="cutTrim" type="number" value="${st.trim}"></div><div class="field"><label>Sobra mín. L</label><input id="cutMinRemnantW" type="number" value="${st.minRemnantW}"></div><div class="field"><label>Sobra mín. A</label><input id="cutMinRemnantH" type="number" value="${st.minRemnantH}"></div></div><label class="cut-check"><input id="cutGrain" type="checkbox" ${st.grain?'checked':''}> Respeitar sentido do veio</label><button class="btn gold cut-optimize" onclick="cutOptimize()">⚙ OTIMIZAR PLANO</button><p class="cut-algo-note">Otimização guilhotina determinística com agrupamento por material/espessura, serra, refilo, rotação e sobras.</p></aside></div><div id="cutResultKpis" class="cut-result-kpis"></div><div id="cutPreview" class="cut-preview"></div><div class="cut-export-bar"><b>Exportação / Interoperabilidade</b><button class="btn" onclick="cutExport('generic')">CSV Universal</button><button class="btn" onclick="cutExport('cortecerto')">Corte Certo</button><button class="btn" onclick="cutExport('cortecloud')">Cortecloud</button><button class="btn" onclick="cutExport('opencutlist')">SketchUp / OpenCutList</button><button class="btn" onclick="cutPrint()">Imprimir Plano</button><button class="btn gold" onclick="cutLabelsOpen()">🏷 Etiquetas Produção</button></div></div>`}
 function cutLoadDemo(){cutDraft.pieces=[['Lateral Esq.',720,560],['Lateral Dir.',720,560],['Base',900,560],['Tampo',900,580],['Prateleira',864,540],['Porta 1',715,445],['Porta 2',715,445],['Travessa',864,120]].map(([name,w,h],i)=>({id:crypto.randomUUID(),name,w,h,t:15,material:'MDF Branco TX',grain:i>4,edge:'1mm',source:'Demo'}));refreshCutPieces();toast('Projeto exemplo carregado')}
 function addCutPlan(){cutDraft={pieces:[],layouts:[],settings:{sheetW:2750,sheetH:1850,kerf:4,trim:10,minRemnantW:300,minRemnantH:300,grain:true},source:'Manual'};openModal('Novo Plano de Corte PRO',cutEditor(),`saveCutPlan()`);modal.classList.add('cut-modal');setTimeout(()=>{refreshCutPieces();renderCutPreview()},0)}
 function editCutPlan(id){const x=cutById(id);if(!x)return;openModal('Editar Plano de Corte',cutEditor(x),`saveCutPlan('${id}')`);modal.classList.add('cut-modal');setTimeout(()=>{refreshCutPieces();renderCutPreview()},0)}
@@ -2392,10 +2392,154 @@ async function deleteCutPlan(id){
  const {error}=await sb.from('cutting_plans').delete().eq('id',id);if(error)return toast('Erro: '+error.message);
  await persistRefresh('Plano excluído')
 }
-function viewCutPlan(id){const x=cutById(id);if(!x)return;cutDraft={pieces:x.data?.pieces||[],layouts:x.data?.layouts||[],settings:x.data?.settings||{},source:x.source};openModal(x.name,`<div class="cut-view"><div class="cut-view-head"><div><span class="badge gold">${esc(x.source)}</span><h2>${esc(x.name)}</h2><p>${esc(cutProject(x.production_project_id)?.title||'Plano avulso')}</p></div><div><strong>${Number(x.utilization_pct||0).toFixed(1)}%</strong><span>aproveitamento</span></div></div><div id="cutResultKpis" class="cut-result-kpis"></div><div id="cutPreview" class="cut-preview"></div><div class="client-quick"><button class="btn gold" onclick="closeModal();editCutPlan('${id}')">Editar / Reotimizar</button><button class="btn" onclick="cutPrint()">Imprimir</button></div></div>`,'');modal.classList.add('cut-modal');setTimeout(renderCutPreview,0)}
+function viewCutPlan(id){const x=cutById(id);if(!x)return;cutDraft={pieces:x.data?.pieces||[],layouts:x.data?.layouts||[],settings:x.data?.settings||{},source:x.source};openModal(x.name,`<div class="cut-view"><div class="cut-view-head"><div><span class="badge gold">${esc(x.source)}</span><h2>${esc(x.name)}</h2><p>${esc(cutProject(x.production_project_id)?.title||'Plano avulso')}</p></div><div><strong>${Number(x.utilization_pct||0).toFixed(1)}%</strong><span>aproveitamento</span></div></div><div id="cutResultKpis" class="cut-result-kpis"></div><div id="cutPreview" class="cut-preview"></div><div class="client-quick"><button class="btn gold" onclick="closeModal();editCutPlan('${id}')">Editar / Reotimizar</button><button class="btn" onclick="cutPrint()">Imprimir</button><button class="btn gold" onclick="cutLabelsOpen()">🏷 Etiquetas</button></div></div>`,'');modal.classList.add('cut-modal');setTimeout(renderCutPreview,0)}
 function cutCsvText(mode){let h;if(mode==='opencutlist')h=['Designation','Length','Width','Thickness','Quantity','Material','Tags'];else if(mode==='cortecerto')h=['DESCRICAO','COMPRIMENTO','LARGURA','ESPESSURA','QUANTIDADE','MATERIAL','FITA'];else if(mode==='cortecloud')h=['Descricao','Comprimento','Largura','Quantidade','Material','Espessura','Fita'];else h=['peca','material','comprimento_mm','largura_mm','espessura_mm','quantidade','veio','fita'];const rows=cutDraft.pieces.map(p=>mode==='opencutlist'?[p.name,p.w,p.h,p.t,1,p.material,p.grain?'grain':''] : mode==='cortecerto'?[p.name,p.w,p.h,p.t,1,p.material,p.edge||''] : mode==='cortecloud'?[p.name,p.w,p.h,1,p.material,p.t,p.edge||''] : [p.name,p.material,p.w,p.h,p.t,1,p.grain?'SIM':'NAO',p.edge||'']);return [h,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(';')).join('\n')}
 function cutExport(mode){if(!cutDraft.pieces.length)return toast('Não há peças para exportar');const names={generic:'universal',cortecerto:'corte_certo',cortecloud:'cortecloud',opencutlist:'opencutlist'};const blob=new Blob(['\ufeff'+cutCsvText(mode)],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`vimak_${names[mode]||mode}_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);toast('Arquivo de interoperabilidade gerado')}
 function cutPrint(){if(!cutDraft.layouts.length)return toast('Otimize o plano antes de imprimir');const w=window.open('','_blank');w.document.write(`<html><head><title>Plano de Corte VIMAK</title><style>body{font-family:Arial;color:#222;padding:25px}h1{margin-bottom:3px}.sheet{page-break-inside:avoid;margin:25px 0;border-top:1px solid #ccc;padding-top:15px}.sheet svg{width:100%;max-height:650px}.meta{display:flex;gap:25px;font-size:12px}@media print{button{display:none}}</style></head><body><h1>Plano de Corte • ${esc(company?.name||'VIMAK')}</h1><p>Gerado em ${new Date().toLocaleString('pt-BR')}</p>${cutDraft.layouts.map((sh,i)=>`<div class="sheet"><h3>Chapa ${i+1} — ${esc(sh.key)}</h3><div class="meta"><b>${sh.placed.length} peças</b><b>${sh.util.toFixed(1)}% aproveitamento</b><b>${sh.waste.toFixed(1)}% perda</b></div>${cutSvgSheet(sh)}</div>`).join('')}<script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()}
+
+function cutLabelAscii(v){
+ return String(v??'')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^\x20-\x7E]/g,' ')
+  .replace(/\s+/g,' ')
+  .trim()
+}
+function cutCode128Svg(value,height=58){
+ const P=[
+ "212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212",
+ "112232","122132","122231","113222","123122","123221","223211","221132","221231","213212","223112","312131",
+ "311222","321122","321221","312212","322112","322211","212123","212321","232121","111323","131123","131321",
+ "112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321","133121",
+ "313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111",
+ "314111","221411","431111","111224","111422","121124","121421","141122","141221","112214","112412","122114",
+ "122411","142112","142211","241211","221114","413111","241112","134111","111242","121142","121241","114212",
+ "124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141","114113",
+ "114311","411113","411311","113141","114131","311141","411131","211412","211214","211232","2331112"];
+ const s=cutLabelAscii(value).slice(0,42)||'VIMAK';
+ const codes=[104,...[...s].map(ch=>Math.max(0,Math.min(94,ch.charCodeAt(0)-32)))];
+ let sum=104;
+ for(let i=1;i<codes.length;i++)sum+=codes[i]*i;
+ codes.push(sum%103,106);
+ let x=0,bars='';
+ for(const code of codes){
+  const pat=P[code]||P[0];
+  let bar=true;
+  for(const ch of pat){
+   const w=Number(ch);
+   if(bar)bars+=`<rect x="${x}" y="0" width="${w}" height="${height}" fill="#000"/>`;
+   x+=w;bar=!bar
+  }
+ }
+ return `<svg class="label-barcode" viewBox="0 0 ${x} ${height+16}" preserveAspectRatio="none">${bars}<text x="${x/2}" y="${height+13}" text-anchor="middle" font-size="10" font-family="monospace">${esc(s)}</text></svg>`
+}
+function cutLabelContext(){
+ const projectId=document.getElementById('cutProject')?.value||'';
+ const project=cutProject(projectId);
+ const client=project?.client_id?clientById(project.client_id):null;
+ return {
+  projectId,
+  project:project?.title||document.getElementById('cutName')?.value||'Plano de Corte',
+  client:client?.name||'Sem cliente',
+  module:'',
+  order:project?.id?String(project.id).slice(0,8).toUpperCase():'AVULSO'
+ }
+}
+function cutLabelRows(){
+ const out=[];
+ cutDraft.layouts.forEach((sh,si)=>{
+  sh.placed.forEach((p,pi)=>{
+   out.push({
+    sheet:si+1,
+    pieceNo:pi+1,
+    label:`C${String(si+1).padStart(2,'0')}-P${String(pi+1).padStart(2,'0')}`,
+    materialKey:sh.key,
+    piece:p
+   })
+  })
+ });
+ return out
+}
+function cutLabelsOpen(){
+ if(!cutDraft.layouts.length)return toast('Otimize o plano antes de gerar etiquetas');
+ const c=cutLabelContext(),rows=cutLabelRows();
+ openModal('Etiquetas de Produção',`<div class="label-pro">
+  <div class="label-pro-hero">
+   <div><span>SMARTCUT • PRODUÇÃO</span><h2>Etiquetas vinculadas ao plano de corte</h2><p>${rows.length} etiquetas prontas para identificação das peças.</p></div>
+   <div class="label-pro-count"><b>${rows.length}</b><span>PEÇAS</span></div>
+  </div>
+  <div class="form-grid label-pro-form">
+   <div class="field"><label>Cliente</label><input id="lblClient" value="${esc(c.client)}"></div>
+   <div class="field"><label>Projeto</label><input id="lblProject" value="${esc(c.project)}"></div>
+   <div class="field"><label>Ambiente / Módulo</label><input id="lblModule" placeholder="Ex.: Cozinha • Torre quente"></div>
+   <div class="field"><label>Ordem / OP</label><input id="lblOrder" value="${esc(c.order)}"></div>
+   <div class="field"><label>Tamanho da etiqueta</label><select id="lblSize"><option value="100x70">100 × 70 mm</option><option value="90x50">90 × 50 mm</option><option value="80x50">80 × 50 mm</option></select></div>
+   <div class="field"><label>Impressão</label><select id="lblMode"><option value="all">Todas as peças</option><option value="sheet">Somente chapa selecionada</option></select></div>
+  </div>
+  <div class="label-pro-actions">
+   <button class="btn" onclick="cutLabelsPreview()">Atualizar prévia</button>
+   <button class="btn gold" onclick="cutLabelsPrint()">🏷 Imprimir Etiquetas</button>
+  </div>
+  <div id="labelPreview" class="label-preview-grid"></div>
+ </div>`,'');
+ setTimeout(cutLabelsPreview,0)
+}
+function cutLabelMeta(){
+ return {
+  client:document.getElementById('lblClient')?.value.trim()||'Sem cliente',
+  project:document.getElementById('lblProject')?.value.trim()||'Sem projeto',
+  module:document.getElementById('lblModule')?.value.trim()||'Sem módulo',
+  order:document.getElementById('lblOrder')?.value.trim()||'AVULSO',
+  size:document.getElementById('lblSize')?.value||'100x70'
+ }
+}
+function cutLabelCard(row,meta){
+ const p=row.piece;
+ const code1=`${meta.order}-${row.label}`;
+ const code2=cutLabelAscii(p.code||p.id||row.label).slice(0,36);
+ const edge=p.edge||'—';
+ const grain=p.grain?'Sim':'Não';
+ return `<article class="prod-label">
+  <div class="prod-label-main">
+   <div class="prod-label-head">
+    <div><b>VIMAK</b><span>ETIQUETA DE PRODUÇÃO</span></div>
+    <div class="prod-label-id"><small>Chapa ${row.sheet}</small><strong>${row.label}</strong></div>
+   </div>
+   <div class="prod-label-info">
+    <div><span>Cliente</span><b>${esc(meta.client)}</b></div>
+    <div><span>Projeto</span><b>${esc(meta.project)}</b></div>
+    <div><span>Ambiente / Módulo</span><b>${esc(meta.module)}</b></div>
+    <div><span>Peça</span><b>${esc(p.name||'Peça')}</b></div>
+   </div>
+   <div class="prod-label-spec">
+    <div><span>Dimensão</span><strong>${p.w} × ${p.h} × ${p.t} mm</strong></div>
+    <div><span>Material</span><strong>${esc(p.material||'MDF')}</strong></div>
+    <div><span>Veio</span><b>${grain}</b></div>
+    <div><span>Fita / Borda</span><b>${esc(edge)}</b></div>
+   </div>
+   <div class="prod-label-bar">${cutCode128Svg(code1,48)}</div>
+   <div class="prod-label-code"><span>Cód. Programa / Peça</span>${cutCode128Svg(code2,44)}</div>
+  </div>
+  <div class="prod-label-side">
+   <div class="side-code">${cutCode128Svg(code1,42)}</div>
+   <b>${esc(code1)}</b>
+  </div>
+ </article>`
+}
+function cutLabelsPreview(){
+ const box=document.getElementById('labelPreview');if(!box)return;
+ const meta=cutLabelMeta(),rows=cutLabelRows().slice(0,4);
+ box.innerHTML=rows.map(r=>cutLabelCard(r,meta)).join('');
+}
+function cutLabelsPrint(){
+ const meta=cutLabelMeta();
+ const rows=cutLabelRows();
+ if(!rows.length)return toast('Nenhuma peça otimizada');
+ const [wm,hm]=(meta.size||'100x70').split('x').map(Number);
+ const w=window.open('','_blank');
+ const css=`@page{margin:5mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;color:#111}.print-grid{display:grid;grid-template-columns:repeat(2,${wm}mm);gap:4mm;align-items:start}.prod-label{width:${wm}mm;height:${hm}mm;border:1.2px solid #111;display:grid;grid-template-columns:1fr 16mm;overflow:hidden;page-break-inside:avoid;background:#fff}.prod-label-main{padding:3mm;display:flex;flex-direction:column;gap:1.5mm;min-width:0}.prod-label-head{display:flex;justify-content:space-between;border-bottom:1px solid #222;padding-bottom:1.5mm}.prod-label-head b{font-size:15pt}.prod-label-head span{display:block;font-size:6.5pt;letter-spacing:.7px}.prod-label-id{text-align:right}.prod-label-id small{display:block;font-size:7pt}.prod-label-id strong{font-size:13pt}.prod-label-info{display:grid;grid-template-columns:1fr 1fr;gap:1mm 3mm}.prod-label-info span,.prod-label-spec span,.prod-label-code>span{font-size:6.2pt;color:#555;display:block}.prod-label-info b{font-size:8pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.prod-label-spec{display:grid;grid-template-columns:1.35fr 1.3fr .55fr .8fr;border-top:1px solid #bbb;border-bottom:1px solid #bbb;padding:1.2mm 0;gap:2mm}.prod-label-spec strong,.prod-label-spec b{font-size:7.5pt}.label-barcode{width:100%;height:13mm;display:block}.prod-label-code .label-barcode{height:10mm}.prod-label-side{border-left:1px solid #111;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}.prod-label-side .side-code{width:${Math.max(42,hm-10)}mm;transform:rotate(90deg);transform-origin:center}.prod-label-side b{position:absolute;right:1mm;bottom:2mm;writing-mode:vertical-rl;font-size:6pt}.prod-label-bar{margin-top:auto}`;
+ w.document.write(`<html><head><title>Etiquetas de Produção • ${esc(meta.project)}</title><style>${css}</style></head><body><div class="print-grid">${rows.map(r=>cutLabelCard(r,meta)).join('')}</div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+ w.document.close()
+}
 function corte(){const total=cache.cuttingPlans.length,optimized=cache.cuttingPlans.filter(x=>Number(x.sheets_count)>0),avg=optimized.length?optimized.reduce((a,x)=>a+Number(x.utilization_pct||0),0)/optimized.length:0,sheets=cache.cuttingPlans.reduce((a,x)=>a+Number(x.sheets_count||0),0),waste=optimized.length?optimized.reduce((a,x)=>a+Number(x.waste_pct||0),0)/optimized.length:0;const rows=cache.cuttingPlans.map(x=>`<tr><td><button class="link-client" onclick="viewCutPlan('${x.id}')"><b>${esc(x.name)}</b></button><small>${esc(x.source)}</small></td><td>${esc(cutProject(x.production_project_id)?.title||'Avulso')}</td><td>${Number(x.sheets_count||0)}</td><td><b class="goldtxt">${Number(x.utilization_pct||0).toFixed(1)}%</b></td><td>${Number(x.waste_pct||0).toFixed(1)}%</td><td><span class="badge ${x.status==='Concluído'?'ok':x.status==='Liberado para Corte'?'blue':''}">${esc(x.status)}</span></td><td><div class="row-actions"><button class="btn sm gold" onclick="viewCutPlan('${x.id}')">Ver</button><button class="btn sm" onclick="editCutPlan('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteCutPlan('${x.id}')">Excluir</button></div></td></tr>`).join('');return shell('Plano de Corte PRO','Central de importação, otimização, visualização e interoperabilidade para a produção moveleira',`<button class="btn gold" onclick="addCutPlan()">+ Novo Plano</button>`,`<div class="cut-command"><div><span class="measurement-version">V6.13 • SMARTCUT INTEGRATION HUB</span><h2>Plano de Corte Inteligente</h2><p>Promob, Cortecloud, SketchUp/OpenCutList e Corte Certo em um fluxo único de peças, chapas, otimização e produção.</p></div><button class="btn gold" onclick="addCutPlan()">＋ IMPORTAR / CRIAR PLANO</button></div><div class="grid g4 proposal-kpis"><div class="card kpi"><label>Planos de corte</label><strong>${total}</strong></div><div class="card kpi"><label>Aproveitamento médio</label><strong class="goldtxt">${avg.toFixed(1)}%</strong></div><div class="card kpi"><label>Chapas processadas</label><strong>${sheets}</strong></div><div class="card kpi"><label>Perda média</label><strong>${waste.toFixed(1)}%</strong></div></div><div class="cut-source-cards"><div><b>P</b><strong>Promob</strong><span>CSV • TXT • XML • Cut Planning</span></div><div><b>C</b><strong>Cortecloud</strong><span>Lista de peças • CSV</span></div><div><b>S</b><strong>SketchUp</strong><span>OpenCutList • CSV • DXF workflow</span></div><div><b>CC</b><strong>Corte Certo</strong><span>CSV • TXT • integração por arquivo</span></div></div><div class="cut-tech-note"><b>Hub de interoperabilidade VIMAK</b><span>Importe arquivos compatíveis, normalize as peças, otimize internamente e exporte listas padronizadas. Integrações diretas por API dependem de credenciais/plugins oficiais de cada fornecedor.</span></div><div class="filters"><div class="field"><label>Buscar plano</label><input placeholder="Plano, projeto, origem, status..." oninput="filterTable(this.value)"></div></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Plano</th><th>Projeto</th><th>Chapas</th><th>Aproveitamento</th><th>Perda</th><th>Status</th><th>Ações</th></tr></thead><tbody id="rows">${rows||'<tr><td colspan="7" class="empty">Nenhum plano criado. Importe um arquivo do seu software de projeto ou crie manualmente.</td></tr>'}</tbody></table></div></div>`)}
 let remnantFilter='disponivel',remnantSearch='';
 function remById(id){return cache.sheetRemnants.find(x=>x.id===id)}
@@ -2523,7 +2667,35 @@ function cutParseDelimited(text){
  })
 }
 function cutParseXML(text){const doc=new DOMParser().parseFromString(text,'text/xml');const nodes=[...doc.querySelectorAll('piece,peca,item,part,component')];return nodes.map(n=>{const o={};[...n.attributes].forEach(a=>o[a.name]=a.value);[...n.children].forEach(c=>o[c.tagName]=c.textContent.trim());return o})}
-function cutRowsToPieces(rows,source){const out=[];rows.forEach((r,idx)=>{let name=cutPick(r,['descricao','descrição','description','designation','nome','name','peca','peça','part','componente','component','referencia','reference']);let w=cutNum(cutPick(r,['comprimento','length','largura','width','dimx','x','medida1']));let h=cutNum(cutPick(r,['largura','width','altura','height','dimy','y','medida2']));let t=cutNum(cutPick(r,['espessura','thickness','thick','esp','z']));let qty=Math.max(1,Math.round(cutNum(cutPick(r,['quantidade','quantity','qty','qtd']))||1));let material=cutPick(r,['material','chapa','sheet','board','decor','cor','color'])||'MDF';let grain=String(cutPick(r,['veio','grain','sentido','direction'])).toLowerCase();let edge=cutPick(r,['fita','borda','edge','edgeband','edge_band'])||'';if(w>0&&h>0){for(let q=0;q<qty;q++)out.push({id:crypto.randomUUID(),name:name||`Peça ${idx+1}`,w,h,t:t||15,material,grain:grain&&!['nao','não','none','0','false'].includes(grain),edge,source})}});return out}
+function cutRowsToPieces(rows,source){
+ const out=[];
+ rows.forEach((r,idx)=>{
+  let name=cutPick(r,['descricao','descrição','description','designation','nome','name','peca','peça','part','componente','component','referencia','reference']);
+  let w=cutNum(cutPick(r,['comprimento','length','largura','width','dimx','x','medida1']));
+  let h=cutNum(cutPick(r,['largura','width','altura','height','dimy','y','medida2']));
+  let t=cutNum(cutPick(r,['espessura','thickness','thick','esp','z']));
+  let qty=Math.max(1,Math.round(cutNum(cutPick(r,['quantidade','quantity','qty','qtd']))||1));
+  let material=cutPick(r,['material','chapa','sheet','board','decor','cor','color'])||'MDF';
+  let grain=String(cutPick(r,['veio','grain','sentido','direction'])).toLowerCase();
+  let edge=cutPick(r,['fita','borda','edge','edgeband','edge_band'])||'';
+  let code=cutPick(r,['codigo','código','code','cod','referencia','reference'])||'';
+  let rawIndex=cutPick(r,['indice','índice','index','item'])||String(idx+1);
+  if(w>0&&h>0){
+   for(let q=0;q<qty;q++)out.push({
+    id:crypto.randomUUID(),
+    name:name||`Peça ${idx+1}`,
+    w,h,t:t||15,material,
+    grain:grain&&!['nao','não','none','0','false'].includes(grain),
+    edge,source,
+    code,
+    rawIndex,
+    copyIndex:q+1,
+    copyTotal:qty
+   })
+  }
+ });
+ return out
+}
 function cutImportFile(input){
  const f=input.files?.[0];if(!f)return;
  const reader=new FileReader();
@@ -2553,7 +2725,25 @@ function cutSettingsFromForm(){['sheetW','sheetH','kerf','trim','minRemnantW','m
 function cutTryPlace(sheet,p,settings){const k=settings.kerf;let choices=[];for(const r of sheet.free){const variants=[{w:p.w,h:p.h,rot:false}];if((!p.grain||!settings.grain)&&p.w!==p.h)variants.push({w:p.h,h:p.w,rot:true});for(const v of variants)if(v.w<=r.w&&v.h<=r.h)choices.push({r,v,score:(r.w-v.w)*(r.h-v.h)+Math.min(r.w-v.w,r.h-v.h)*.01})}if(!choices.length)return false;choices.sort((a,b)=>a.score-b.score);const {r,v}=choices[0];sheet.placed.push({...p,x:r.x,y:r.y,pw:v.w,ph:v.h,rot:v.rot});sheet.free=sheet.free.filter(x=>x!==r);const rw=r.w-v.w-k,bh=r.h-v.h-k;if(rw>0)sheet.free.push({x:r.x+v.w+k,y:r.y,w:rw,h:v.h});if(bh>0)sheet.free.push({x:r.x,y:r.y+v.h+k,w:r.w,h:bh});return true}
 function cutOptimize(){cutSettingsFromForm();const st=cutDraft.settings;if(!cutDraft.pieces.length)return toast('Adicione ou importe peças primeiro');if(st.sheetW<=0||st.sheetH<=0)return toast('Informe a dimensão da chapa');const usableW=st.sheetW-2*st.trim,usableH=st.sheetH-2*st.trim;if(usableW<=0||usableH<=0)return toast('Refilo maior que a chapa');const groups={};cutDraft.pieces.forEach(p=>{const key=`${p.material}|${p.t}`;(groups[key]??=[]).push(p)});let layouts=[];for(const [key,pieces] of Object.entries(groups)){const sorted=[...pieces].sort((a,b)=>Math.max(b.w,b.h)*Math.min(b.w,b.h)-Math.max(a.w,a.h)*Math.min(a.w,a.h));let sheets=[];for(const p of sorted){let ok=false;for(const sh of sheets)if(cutTryPlace(sh,p,st)){ok=true;break}if(!ok){const sh={key,index:sheets.length+1,w:st.sheetW,h:st.sheetH,placed:[],free:[{x:st.trim,y:st.trim,w:usableW,h:usableH}]};if(!cutTryPlace(sh,p,st)){p.unplaced=true}else sheets.push(sh)}}layouts.push(...sheets)}layouts.forEach(sh=>{sh.used=sh.placed.reduce((a,p)=>a+p.w*p.h,0);sh.util=sh.used/(sh.w*sh.h)*100;sh.waste=100-sh.util;sh.remnants=sh.free.filter(r=>r.w>=st.minRemnantW&&r.h>=st.minRemnantH)});cutDraft.layouts=layouts;renderCutPreview();toast(`Otimização concluída: ${layouts.length} chapa(s)`) }
 function cutColor(i){return `hsl(${(i*47)%360} 45% 58%)`}
-function cutSvgSheet(sh){const scale=700/sh.w,H=Math.max(280,sh.h*scale);return `<svg viewBox="0 0 ${sh.w} ${sh.h}" class="cut-svg" style="aspect-ratio:${sh.w}/${sh.h}"><rect x="0" y="0" width="${sh.w}" height="${sh.h}" fill="#e8e2d5" stroke="#9b7b42" stroke-width="8"/>${sh.placed.map((p,i)=>`<g><rect x="${p.x}" y="${p.y}" width="${p.pw}" height="${p.ph}" fill="${cutColor(i)}" fill-opacity=".72" stroke="#242424" stroke-width="4"/><text x="${p.x+p.pw/2}" y="${p.y+p.ph/2}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.max(28,Math.min(58,p.pw/8))}" fill="#111">${esc(p.name)}</text><text x="${p.x+p.pw/2}" y="${p.y+p.ph/2+55}" text-anchor="middle" font-size="32" fill="#222">${p.w}×${p.h}${p.rot?' ↻':''}</text></g>`).join('')}</svg>`}
+function cutSvgSheet(sh){
+ const scale=700/sh.w,H=Math.max(280,sh.h*scale);
+ return `<svg viewBox="0 0 ${sh.w} ${sh.h}" class="cut-svg" style="aspect-ratio:${sh.w}/${sh.h}">
+  <rect x="0" y="0" width="${sh.w}" height="${sh.h}" fill="#e8e2d5" stroke="#9b7b42" stroke-width="8"/>
+  ${sh.placed.map((p,i)=>{
+   const pid=`P${String(i+1).padStart(2,'0')}`;
+   const minSide=Math.min(p.pw,p.ph);
+   const showName=minSide>220;
+   const showSize=minSide>150;
+   return `<g>
+    <rect x="${p.x}" y="${p.y}" width="${p.pw}" height="${p.ph}" fill="${cutColor(i)}" fill-opacity=".72" stroke="#171717" stroke-width="6"/>
+    <rect x="${p.x+10}" y="${p.y+10}" width="${Math.min(120,Math.max(70,p.pw*.18))}" height="${Math.min(70,Math.max(45,p.ph*.15))}" rx="8" fill="#111" fill-opacity=".88"/>
+    <text x="${p.x+20}" y="${p.y+55}" font-size="${Math.max(28,Math.min(42,p.pw/10))}" font-weight="700" fill="#fff">${pid}</text>
+    ${showName?`<text x="${p.x+p.pw/2}" y="${p.y+p.ph/2-12}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.max(28,Math.min(56,p.pw/8))}" fill="#111">${esc(p.name)}</text>`:''}
+    ${showSize?`<text x="${p.x+p.pw/2}" y="${p.y+p.ph/2+48}" text-anchor="middle" font-size="${Math.max(24,Math.min(34,p.pw/12))}" fill="#222">${p.w}×${p.h}${p.rot?' ↻':''}</text>`:''}
+   </g>`
+  }).join('')}
+ </svg>`
+}
 function renderCutPreview(){const box=document.getElementById('cutPreview');if(!box)return;if(!cutDraft.layouts.length){box.innerHTML='<div class="cut-empty-preview">Execute a otimização para visualizar as chapas.</div>';return}box.innerHTML=cutDraft.layouts.map((sh,i)=>`<article class="cut-sheet-card"><header><div><b>Chapa ${i+1}</b><span>${esc(sh.key.replace('|',' • '))}</span></div><strong>${sh.util.toFixed(1)}% aproveitamento</strong></header>${cutSvgSheet(sh)}<footer><span>${sh.placed.length} peças</span><span>${sh.remnants.length} sobras aproveitáveis</span><span>Perda ${sh.waste.toFixed(1)}%</span></footer></article>`).join('');const k=document.getElementById('cutResultKpis');if(k){const u=cutDraft.layouts.reduce((a,x)=>a+x.used,0),area=cutDraft.layouts.reduce((a,x)=>a+x.w*x.h,0),util=area?u/area*100:0,rem=cutDraft.layouts.reduce((a,x)=>a+x.remnants.length,0);k.innerHTML=`<div><b>${cutDraft.layouts.length}</b><span>Chapas</span></div><div><b>${util.toFixed(1)}%</b><span>Aproveitamento</span></div><div><b>${(100-util).toFixed(1)}%</b><span>Perda</span></div><div><b>${rem}</b><span>Sobras úteis</span></div>`}}
 let teamFilter='ativas',teamSearch='';
 function teamById(id){return cache.installationTeams.find(x=>x.id===id)}
