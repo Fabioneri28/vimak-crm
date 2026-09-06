@@ -14,6 +14,8 @@ const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
 let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],measurements:[],purchaseOrders:[],purchaseOrderItems:[],documentTemplates:[],productionProjects:[],cuttingPlans:[],sheetRemnants:[],integrations:[],installationTeams:[],installationSchedule:[],costCenters:[],bankAccounts:[],accountsReceivable:[],accountsPayable:[],invoices:[],cardMachines:[],financeBudgets:[],financeBudgetItems:[],financeTransactions:[],financeApprovals:[],financeEntities:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
+let adminSafe={profiles:null,audit:null,profilesError:"",auditError:"",loadingProfiles:false,loadingAudit:false};
+
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
   window.VIMAK_CONFIG.supabasePublishableKey
@@ -789,10 +791,118 @@ async function deleteRow(table,id){
  if(error)return toast("Erro: "+error.message);
  toast("Registro excluído");render();
 }
-function empresa(){return shell("Configurações da Empresa","Dados reais do tenant ativo","",`<div class="card pad"><div class="field"><label>Empresa</label><input value="${esc(company.name)}" disabled></div><div class="field" style="margin-top:10px"><label>Plano</label><input value="${esc(company.plan||"trial")}" disabled></div><div class="notice" style="margin-top:12px">Empresa vinculada ao usuário autenticado via Supabase.</div></div>`)}
-function usuarios(){return shell("Usuários","Perfis vinculados à empresa","",`<div class="notice">Nesta V6, criação de usuários adicionais será feita pela camada administrativa segura. Seu usuário atual: <b>${esc(profile.email||session.user.email)}</b> • ${esc(profile.role)}</div>`)}
-function auditoria(){return simpleTable("Auditoria","Eventos do ambiente","",["Data","Usuário","Ação"],[])}
-function planos(){return shell("Assinatura / Planos","Planos comerciais do SaaS","",`<div class="grid g3">${["Essencial","Profissional","Premium"].map(x=>`<div class="card pad"><h2 class="goldtxt">${x}</h2><button class="btn">Selecionar</button></div>`).join("")}</div>`)}
+function empresa(){
+ const a=company.address||{},st=company.settings||{};
+ return shell("Configurações da Empresa","Dados oficiais, endereço, identidade visual e padrões comerciais",
+ `<button class="btn gold" onclick="cfgSaveSafe()">Salvar alterações</button>`,
+ `<div class="safe-admin-hero"><div><span>V6.22 • CONFIGURAÇÃO</span><h2>Central da Empresa</h2><p>As informações alimentam propostas, documentos e identidade do CRM.</p></div><div class="safe-admin-plan"><small>PLANO ATUAL</small><b>${esc(company.plan||"trial")}</b></div></div>
+ <div class="safe-admin-grid">
+  <section class="card pad"><h3>Dados da empresa</h3><div class="form-grid">
+   <div class="field"><label>Nome fantasia</label><input id="cfgName" value="${esc(company.name||"")}"></div>
+   <div class="field"><label>Razão social</label><input id="cfgLegal" value="${esc(company.legal_name||"")}"></div>
+   <div class="field"><label>CNPJ / CPF</label><input id="cfgDoc" value="${esc(company.document||"")}"></div>
+   <div class="field"><label>E-mail</label><input id="cfgEmail" value="${esc(company.email||"")}"></div>
+   <div class="field"><label>Telefone / WhatsApp</label><input id="cfgPhone" value="${esc(company.phone||"")}"></div>
+   <div class="field"><label>Site</label><input id="cfgSite" value="${esc(st.site||"")}"></div>
+  </div></section>
+  <aside class="card pad safe-brand">
+   <div class="safe-logo">${company.logo_url?`<img src="${esc(company.logo_url)}">`:`<b>${esc((company.name||"V").charAt(0))}</b>`}</div>
+   <h3>Logo da empresa</h3><p>PNG, JPG ou WEBP de até 4 MB.</p>
+   <input id="cfgLogo" type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="cfgLogoSafe(this)">
+   <button class="btn gold" onclick="cfgLogo.click()">Enviar logo</button>
+  </aside>
+ </div>
+ <div class="grid g2 safe-admin-gap">
+  <section class="card pad"><h3>Endereço comercial</h3><div class="form-grid">
+   <div class="field"><label>CEP</label><input id="cfgCep" value="${esc(a.cep||"")}"></div>
+   <div class="field"><label>Rua / Avenida</label><input id="cfgStreet" value="${esc(a.street||a.rua||"")}"></div>
+   <div class="field"><label>Número</label><input id="cfgNumber" value="${esc(a.number||a.numero||"")}"></div>
+   <div class="field"><label>Complemento</label><input id="cfgComp" value="${esc(a.complement||a.complemento||"")}"></div>
+   <div class="field"><label>Bairro</label><input id="cfgDistrict" value="${esc(a.district||a.bairro||"")}"></div>
+   <div class="field"><label>Cidade</label><input id="cfgCity" value="${esc(a.city||a.cidade||"")}"></div>
+   <div class="field"><label>Estado</label><input id="cfgState" value="${esc(a.state||a.estado||"")}"></div>
+  </div></section>
+  <section class="card pad"><h3>Padrões comerciais</h3><div class="form-grid">
+   <div class="field"><label>Prazo padrão (dias)</label><input id="cfgDelivery" type="number" value="${esc(st.delivery_days||45)}"></div>
+   <div class="field"><label>Garantia (meses)</label><input id="cfgWarranty" type="number" value="${esc(st.warranty_months||60)}"></div>
+   <div class="field"><label>Validade da proposta (dias)</label><input id="cfgValidity" type="number" value="${esc(st.proposal_validity_days||10)}"></div>
+  </div></section>
+ </div>`)
+}
+async function cfgSaveSafe(){
+ const payload={
+  name:cfgName.value.trim(),legal_name:cfgLegal.value.trim(),document:cfgDoc.value.trim(),
+  email:cfgEmail.value.trim(),phone:cfgPhone.value.trim(),
+  address:{cep:cfgCep.value,street:cfgStreet.value,number:cfgNumber.value,complement:cfgComp.value,district:cfgDistrict.value,city:cfgCity.value,state:cfgState.value},
+  settings:{...(company.settings||{}),site:cfgSite.value,delivery_days:Number(cfgDelivery.value||0),warranty_months:Number(cfgWarranty.value||0),proposal_validity_days:Number(cfgValidity.value||0)},
+  updated_at:new Date().toISOString()
+ };
+ if(!payload.name)return toast("Informe o nome da empresa");
+ const {data,error}=await sb.from("companies").update(payload).eq("id",company.id).select().single();
+ if(error)return toast("Erro: "+error.message);
+ company=data;syncChrome();toast("Configurações salvas")
+}
+async function cfgLogoSafe(input){
+ const file=input.files?.[0];if(!file)return;
+ if(file.size>4*1024*1024)return toast("Imagem acima de 4 MB");
+ const ext=(file.name.split(".").pop()||"png").toLowerCase(),path=`${company.id}/logo-${Date.now()}.${ext}`;
+ const up=await sb.storage.from("company-logos").upload(path,file,{upsert:true,contentType:file.type});
+ if(up.error)return toast("Erro: "+up.error.message);
+ const url=sb.storage.from("company-logos").getPublicUrl(path).data.publicUrl;
+ const {data,error}=await sb.from("companies").update({logo_url:url,updated_at:new Date().toISOString()}).eq("id",company.id).select().single();
+ if(error)return toast("Erro: "+error.message);
+ company=data;syncChrome();render();toast("Logo atualizada")
+}
+async function usrLoadSafe(){
+ if(adminSafe.loadingProfiles)return;
+ adminSafe.loadingProfiles=true;adminSafe.profilesError="";
+ const {data,error}=await sb.from("profiles").select("*").eq("company_id",company.id).order("name");
+ adminSafe.profiles=data||[];adminSafe.profilesError=error?.message||"";adminSafe.loadingProfiles=false;
+ if(page==="usuarios")content.innerHTML=usuarios()
+}
+function usuarios(){
+ if(adminSafe.profiles===null&&!adminSafe.loadingProfiles)setTimeout(usrLoadSafe,0);
+ const list=adminSafe.profiles||[];
+ return shell("Usuários da Equipe","Usuários vinculados à empresa, funções e status de acesso","",
+ `<div class="safe-admin-hero"><div><span>V6.22 • USUÁRIOS</span><h2>Equipe & Acessos</h2><p>Consulta segura dos perfis já vinculados ao seu tenant.</p></div><div class="safe-admin-plan"><small>ATIVOS</small><b>${list.filter(x=>x.active!==false).length}</b></div></div>
+ ${adminSafe.profilesError?`<div class="notice">Não foi possível consultar todos os usuários: ${esc(adminSafe.profilesError)}. O restante do CRM continua funcionando normalmente.</div>`:""}
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Usuário</th><th>E-mail</th><th>Função</th><th>Status</th></tr></thead><tbody>
+ ${list.map(u=>`<tr><td><b>${esc(u.name||"—")}</b></td><td>${esc(u.email||"—")}</td><td><span class="safe-role">${esc(u.role||"Vendedor")}</span></td><td>${u.active!==false?'<span class="status ok">Ativo</span>':'<span class="status">Inativo</span>'}</td></tr>`).join("")||`<tr><td colspan="4" class="empty">${adminSafe.loadingProfiles?"Carregando equipe...":"Nenhum usuário encontrado."}</td></tr>`}
+ </tbody></table></div></div>
+ <div class="notice safe-admin-gap"><b>Criação de novos usuários:</b> mantida fora do navegador nesta etapa para não expor privilégios administrativos do Supabase. Assim preservamos a segurança do SaaS.</div>`)
+}
+async function auditLoadSafe(){
+ if(adminSafe.loadingAudit)return;
+ adminSafe.loadingAudit=true;adminSafe.auditError="";
+ const {data,error}=await sb.from("audit_logs").select("*").eq("company_id",company.id).order("created_at",{ascending:false}).limit(300);
+ adminSafe.audit=data||[];adminSafe.auditError=error?.message||"";adminSafe.loadingAudit=false;
+ if(page==="auditoria")content.innerHTML=auditoria()
+}
+function auditoria(){
+ if(adminSafe.audit===null&&!adminSafe.loadingAudit)setTimeout(auditLoadSafe,0);
+ const list=adminSafe.audit||[];
+ return shell("Auditoria","Rastreabilidade dos eventos registrados no ambiente","",
+ `<div class="safe-admin-hero"><div><span>V6.22 • AUDITORIA</span><h2>Audit Trail</h2><p>Visualize ações registradas sem interferir no carregamento principal do CRM.</p></div><div class="safe-admin-plan"><small>EVENTOS</small><b>${list.length}</b></div></div>
+ ${adminSafe.auditError?`<div class="notice">Auditoria indisponível para este usuário: ${esc(adminSafe.auditError)}. Nenhum outro módulo foi afetado.</div>`:""}
+ <div class="filters"><div class="field"><label>Buscar</label><input placeholder="Ação, módulo ou registro..." oninput="filterTable(this.value)"></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Data/Hora</th><th>Ação</th><th>Módulo</th><th>Registro</th></tr></thead><tbody id="rows">
+ ${list.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString("pt-BR")}</td><td><span class="safe-role">${esc(x.action||"—")}</span></td><td>${esc(x.table_name||"—")}</td><td>${esc(x.record_id||"—")}</td></tr>`).join("")||`<tr><td colspan="4" class="empty">${adminSafe.loadingAudit?"Carregando auditoria...":"Nenhum evento registrado."}</td></tr>`}
+ </tbody></table></div></div>`)
+}
+function planos(){
+ const current=String(company.plan||"trial").toLowerCase();
+ const ps=[
+  {code:"essencial",name:"Essencial",price:"R$ 149,90",desc:"Para operações menores que querem centralizar clientes e vendas.",f:["Dashboard e CRM","Clientes e propostas","Documentos","Até 3 usuários"]},
+  {code:"profissional",name:"Profissional",price:"R$ 299,90",desc:"Gestão integrada da venda à execução.",f:["Tudo do Essencial","Produção e montagem","Financeiro completo","Maquininhas & Taxas","Até 10 usuários"]},
+  {code:"premium",name:"Premium",price:"R$ 499,90",desc:"Operação 360° para empresas em expansão.",f:["Tudo do Profissional","Usuários ampliados","Auditoria","Integrações","Suporte prioritário"]}
+ ];
+ return shell("Assinatura / Planos","Visão comercial dos níveis disponíveis no VIMAK CRM","",
+ `<div class="safe-admin-hero"><div><span>V6.22 • ASSINATURA</span><h2>Planos do VIMAK CRM</h2><p>Comparação transparente dos recursos. Nenhuma cobrança é executada automaticamente nesta tela.</p></div><div class="safe-admin-plan"><small>PLANO CADASTRADO</small><b>${esc((company.plan||"trial").toUpperCase())}</b></div></div>
+ <div class="safe-plans">${ps.map(p=>`<article class="safe-plan ${current===p.code?"current":""}"><div class="safe-plan-top"><span>${current===p.code?"PLANO ATUAL":"PLANO"}</span></div><h2>${p.name}</h2><div class="safe-price"><b>${p.price}</b><small>/mês</small></div><p>${p.desc}</p><div class="safe-features">${p.f.map(x=>`<span>✓ ${x}</span>`).join("")}</div><button class="btn ${current===p.code?"":"gold"}" ${current===p.code?"disabled":""} onclick="planInfoSafe('${p.name}')">${current===p.code?"Plano atual":"Ver detalhes"}</button></article>`).join("")}</div>
+ <div class="notice safe-admin-gap">Nesta etapa, a tela de planos é informativa. Ativação, cobrança recorrente e upgrade automático serão conectados somente quando definirmos o gateway de pagamento do SaaS.</div>`)
+}
+function planInfoSafe(name){openModal("Plano "+name,`<div class="safe-plan-info"><h2>${esc(name)}</h2><p>O plano está disponível para futura contratação. A cobrança automática ainda não está habilitada nesta versão.</p></div>`,"")}
+
 function supplierById(id){return cache.suppliers.find(x=>x.id===id)}
 function supplierPhone(v){return String(v||"").replace(/\D/g,"")}
 function supplierForm(x={}){
