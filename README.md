@@ -299,3 +299,24 @@ CFO Command Center inspirado em práticas de ERP corporativo:
 - Dashboard executivo com pipeline, forecast, contas a receber/pagar, performance de 6 meses, alertas, funil, produção, montagem, compras e ranking de propostas.
 - Nenhuma migration nova.
 - Núcleo crítico preservado: init, login, loadIdentity e refreshCore não foram alterados.
+
+
+## V6.22.1 ADMIN SAFE
+Construída diretamente sobre a V6.21 enviada e confirmada como funcional.
+- Configurações da Empresa completas.
+- Usuários carregados somente ao abrir a página.
+- Auditoria carregada somente ao abrir a página.
+- Planos informativos sem cobrança automática.
+- Nenhuma migration nova.
+- Nenhuma alteração em config.js, index.html ou sw.js.
+- init/login/loadIdentity/refreshCore preservados byte a byte.
+
+
+## V6.23 — Financeiro Inteligente
+- Botões rápidos `+ Receita` e `+ Despesa`.
+- Lançamentos por Pix, Transferência, Maquininha, Dinheiro, Boleto ou Outro.
+- Parcelamento de 1x a 24x.
+- Cálculo automático do valor por parcela.
+- Forma de pagamento, parcelas, origem e observações gravadas no metadata de `finance_transactions`.
+- Lançamentos rápidos passam a compor a DRE/visão gerencial sem alterar o núcleo de autenticação.
+- Nenhuma migration nova.
