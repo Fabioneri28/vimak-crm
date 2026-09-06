@@ -320,3 +320,13 @@ Construída diretamente sobre a V6.21 enviada e confirmada como funcional.
 - Forma de pagamento, parcelas, origem e observações gravadas no metadata de `finance_transactions`.
 - Lançamentos rápidos passam a compor a DRE/visão gerencial sem alterar o núcleo de autenticação.
 - Nenhuma migration nova.
+
+
+## V6.24 — Payment Intelligence
+- InfinitePay: taxas oficiais por faixa de faturamento, Pix, débito e crédito 1x–12x.
+- Mercado Pago Point: taxas oficiais por faixa de faturamento, Pix, débito e crédito 1x–18x.
+- Leozinha: editor de taxas contratuais 1x–18x, pois a página oficial não publica uma tabela universal.
+- Simulador compara taxa, custo e líquido e destaca a melhor opção.
+- Configurações de faixa e taxas Leozinha ficam salvas por empresa no navegador.
+- Nenhuma migration nova.
+- Núcleo de autenticação e refresh preservado.

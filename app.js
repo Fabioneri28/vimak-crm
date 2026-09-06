@@ -2635,8 +2635,122 @@ function financeiro(){
  <div class="fin-tabs">${tabs.map(x=>`<button class="${finTab===x[0]?'active':''}" onclick="finSetTab('${x[0]}')">${x[1]}</button>`).join('')}</div>
  ${finTab==='cockpit'?finCockpit():finTab==='receber'?finTable('receber'):finTab==='pagar'?finTable('pagar'):finTab==='tesouraria'?finTreasury():finTab==='dre'?finDRE():finTab==='budget'?finBudget():finGovernance()}`)
 }
-function maquininhas(){return simpleTable("Maquininhas & Taxas","Tabela card_machines pronta","",["Maquininha","Débito","Crédito","Ações"],[])}
 
-const VIEWS={dashboard,leads,empresa,usuarios,auditoria,planos,clientes,fornecedores,parceiros,posvenda,insumos,propostas,modelos,medicoes,compras,templates,kanban,corte,sobras,cortecloud,equipes,agenda,financeiro,maquininhas};
-window.addEventListener("hashchange",()=>{page=location.hash.slice(1)||"dashboard";if(session)render()});
-init();
+let payTab="simulador";
+const PAY_INF={
+  "ate20":{label:"Até R$ 20 mil/mês",debit:1.37,credit:[3.15,5.39,6.12,6.85,7.57,8.28,8.99,9.69,10.38,11.06,11.74,12.40]},
+  "20":{label:"Acima de R$ 20 mil/mês",debit:0.85,credit:[2.89,4.22,4.83,5.44,6.05,6.64,7.24,7.82,8.41,8.98,9.56,10.12]},
+  "40":{label:"Acima de R$ 40 mil/mês",debit:0.79,credit:[2.79,4.08,4.65,5.21,5.77,6.32,6.87,7.42,7.96,8.49,9.03,9.56]},
+  "80":{label:"Acima de R$ 80 mil/mês",debit:0.75,credit:[2.69,3.94,4.46,4.98,5.49,5.99,6.51,6.99,7.51,7.99,8.49,8.99]}
+};
+const PAY_MP={
+  "3":{label:"Até R$ 3 mil/mês",pix:.49,debit:1.99,credit:[4.98,9.90,11.28,12.64,13.97,15.27,16.55,17.81,19.04,20.24,21.43,22.59,23.73,24.85,25.95,27.02,28.08,29.12]},
+  "6":{label:"R$ 3 a 6 mil/mês",pix:.49,debit:1.50,credit:[3.48,7.39,8.67,9.33,10.20,10.88,11.89,12.74,13.06,13.15,13.19,13.23,14.86,15.80,16.82,17.93,19.15,20.44]},
+  "10":{label:"R$ 6 a 10 mil/mês",pix:.49,debit:1.40,credit:[3.42,7.19,8.26,9.14,10.01,10.87,11.70,12.55,12.61,12.77,12.86,12.99,14.67,15.62,16.65,17.76,18.98,20.29]},
+  "20":{label:"R$ 10 a 20 mil/mês",pix:.49,debit:1.39,credit:[3.29,6.69,7.94,8.64,9.51,10.87,11.70,12.05,12.11,12.12,12.16,12.22,14.17,15.12,16.15,17.26,18.48,19.79]},
+  "50":{label:"R$ 20 a 50 mil/mês",pix:.49,debit:1.29,credit:[3.10,6.44,7.49,8.39,9.26,10.87,11.63,11.84,11.86,11.87,11.91,11.99,13.92,14.87,15.90,17.01,18.23,19.54]},
+  "50plus":{label:"Acima de R$ 50 mil/mês",pix:.49,debit:1.25,credit:[3.08,6.29,7.34,8.24,9.11,10.72,11.60,11.69,11.71,11.72,11.78,11.89,13.77,14.72,15.75,16.86,18.08,19.39]}
+};
+function payCfgKey(){return `vimak-pay-${company?.id||"local"}`}
+function payCfg(){
+  try{return JSON.parse(localStorage.getItem(payCfgKey())||"{}")}catch(e){return {}}
+}
+function paySaveCfg(v){localStorage.setItem(payCfgKey(),JSON.stringify(v))}
+function payLeoDefaults(){return {pix:null,debit:null,credit:Array(18).fill(null),receive:"1 dia útil"}}
+function payLeo(){let c=payCfg();return {...payLeoDefaults(),...(c.leozinha||{}),credit:[...payLeoDefaults().credit,...((c.leozinha||{}).credit||[])].slice(0,18)}}
+function paySetTab(v){payTab=v;render()}
+function payMoney(v){return Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}
+function payRate(provider,mode,installments,infTier,mpTier){
+ if(provider==="InfinitePay"){
+   let d=PAY_INF[infTier]||PAY_INF.ate20;
+   if(mode==="Pix")return 0;
+   if(mode==="Débito")return d.debit;
+   return d.credit[Math.max(1,Math.min(12,installments))-1] ?? null
+ }
+ if(provider==="Mercado Pago"){
+   let d=PAY_MP[mpTier]||PAY_MP["3"];
+   if(mode==="Pix")return d.pix;
+   if(mode==="Débito")return d.debit;
+   return d.credit[Math.max(1,Math.min(18,installments))-1] ?? null
+ }
+ let d=payLeo();
+ if(mode==="Pix")return d.pix;
+ if(mode==="Débito")return d.debit;
+ return d.credit[Math.max(1,Math.min(18,installments))-1] ?? null
+}
+function payCalc(provider,amount,mode,installments,infTier,mpTier){
+ const rate=payRate(provider,mode,installments,infTier,mpTier);
+ if(rate===null||rate===undefined||Number.isNaN(Number(rate)))return null;
+ const fee=amount*Number(rate)/100,net=amount-fee;
+ return {provider,rate:Number(rate),fee,net,installments,per:amount/installments}
+}
+function payBest(amount,mode,installments,infTier,mpTier){
+ return ["InfinitePay","Mercado Pago","Leozinha"].map(p=>payCalc(p,amount,mode,installments,infTier,mpTier)).filter(Boolean).sort((a,b)=>b.net-a.net)
+}
+function paySimRun(){
+ const amount=Number(document.getElementById("payAmount")?.value||0),
+       mode=document.getElementById("payMode")?.value||"Crédito",
+       installments=Number(document.getElementById("payInst")?.value||1),
+       inf=document.getElementById("payInfTier")?.value||"ate20",
+       mp=document.getElementById("payMpTier")?.value||"3",
+       box=document.getElementById("payResults");
+ if(!box)return;
+ if(!amount){box.innerHTML='<div class="notice">Informe um valor para comparar.</div>';return}
+ if(mode!=="Crédito"&&installments!==1){document.getElementById("payInst").value="1"}
+ const n=mode==="Crédito"?Number(document.getElementById("payInst").value):1;
+ const rows=payBest(amount,mode,n,inf,mp);
+ if(!rows.length){box.innerHTML='<div class="notice">Cadastre as taxas da Leozinha ou escolha uma modalidade disponível.</div>';return}
+ const best=rows[0];
+ box.innerHTML=`<div class="pay-winner"><span>MELHOR OPÇÃO NESTA VENDA</span><h2>${best.provider}</h2><div><b>${best.rate.toFixed(2)}%</b><strong>${payMoney(best.net)}</strong><small>líquido estimado</small></div></div>
+ <div class="pay-compare">${rows.map((x,i)=>`<article class="${i===0?"best":""}"><div class="pay-rank">${i===0?"★ MELHOR":`#${i+1}`}</div><h3>${x.provider}</h3><div class="pay-big">${x.rate.toFixed(2)}%</div><div class="pay-line"><span>Taxa</span><b>${payMoney(x.fee)}</b></div><div class="pay-line"><span>Líquido</span><b>${payMoney(x.net)}</b></div><div class="pay-line"><span>${n}x de</span><b>${payMoney(x.per)}</b></div></article>`).join("")}</div>
+ ${rows.length<3?'<div class="notice">A Leozinha não entra no ranking enquanto suas taxas contratuais não forem cadastradas.</div>':""}`
+}
+function paySimulator(){
+ const cfg=payCfg(),inf=cfg.infTier||"ate20",mp=cfg.mpTier||"3";
+ return `<div class="pay-sim-layout"><section class="card pad"><div class="pay-head"><span>SMART PAYMENT ROUTER</span><h3>Qual é a melhor forma de receber?</h3><p>Compare o valor líquido estimado entre suas três soluções de pagamento.</p></div>
+ <div class="form-grid">
+  <div class="field"><label>Valor da venda</label><input id="payAmount" type="number" step=".01" value="10000" oninput="paySimRun()"></div>
+  <div class="field"><label>Modalidade</label><select id="payMode" onchange="payModeChange();paySimRun()"><option>Crédito</option><option>Débito</option><option>Pix</option></select></div>
+  <div class="field"><label>Parcelas</label><select id="payInst" onchange="paySimRun()">${Array.from({length:18},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===12?"selected":""}>${n}x</option>`).join("")}</select></div>
+  <div class="field"><label>Faixa InfinitePay</label><select id="payInfTier" onchange="payRemember();paySimRun()">${Object.entries(PAY_INF).map(([k,v])=>`<option value="${k}" ${inf===k?"selected":""}>${v.label}</option>`).join("")}</select></div>
+  <div class="field full"><label>Faixa Mercado Pago</label><select id="payMpTier" onchange="payRemember();paySimRun()">${Object.entries(PAY_MP).map(([k,v])=>`<option value="${k}" ${mp===k?"selected":""}>${v.label}</option>`).join("")}</select></div>
+ </div></section><section id="payResults"></section></div><script>setTimeout(paySimRun,0)</script>`
+}
+function payModeChange(){const m=document.getElementById("payMode"),i=document.getElementById("payInst");if(!m||!i)return;if(m.value!=="Crédito"){i.value="1";i.disabled=true}else i.disabled=false}
+function payRemember(){let c=payCfg();c.infTier=document.getElementById("payInfTier")?.value||c.infTier;c.mpTier=document.getElementById("payMpTier")?.value||c.mpTier;paySaveCfg(c)}
+function payRatesTable(){
+ const cfg=payCfg(),inf=cfg.infTier||"ate20",mp=cfg.mpTier||"3",leo=payLeo();
+ let rows=[];
+ for(let n=1;n<=18;n++){
+   rows.push(`<tr><td>${n}x</td><td>${n<=12?PAY_INF[inf].credit[n-1].toFixed(2)+"%":"—"}</td><td>${PAY_MP[mp].credit[n-1].toFixed(2)}%</td><td>${leo.credit[n-1]!=null?Number(leo.credit[n-1]).toFixed(2)+"%":"Configurar"}</td></tr>`)
+ }
+ return `<div class="grid g2"><section class="card pad"><div class="pay-head"><span>TAXAS OFICIAIS</span><h3>Perfis usados pelo simulador</h3></div><div class="field"><label>InfinitePay</label><select onchange="let c=payCfg();c.infTier=this.value;paySaveCfg(c);render()">${Object.entries(PAY_INF).map(([k,v])=>`<option value="${k}" ${inf===k?"selected":""}>${v.label}</option>`).join("")}</select></div><div class="field safe-admin-gap"><label>Mercado Pago</label><select onchange="let c=payCfg();c.mpTier=this.value;paySaveCfg(c);render()">${Object.entries(PAY_MP).map(([k,v])=>`<option value="${k}" ${mp===k?"selected":""}>${v.label}</option>`).join("")}</select></div><div class="notice safe-admin-gap">InfinitePay: perfil “em 1 dia útil” para Visa/Mastercard. Mercado Pago: tabela Point por faixa de faturamento. As taxas podem mudar; valide periodicamente no app/contrato.</div></section>
+ <section class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Crédito</th><th>InfinitePay</th><th>Mercado Pago</th><th>Leozinha</th></tr></thead><tbody>${rows.join("")}</tbody></table></div></section></div>`
+}
+function payLeoEdit(){
+ const l=payLeo();
+ return `<section class="card pad"><div class="pay-head"><span>LEO MADEIRAS • LEOZINHA</span><h3>Taxas contratuais da sua Leozinha</h3><p>A página oficial informa parcelamento até 18x e recebimento em até 1 dia útil, mas não publica uma tabela numérica universal. Por isso, aqui você cadastra exatamente as taxas do seu contrato.</p></div>
+ <div class="form-grid"><div class="field"><label>Pix %</label><input id="leoPix" type="number" step=".01" value="${l.pix??""}"></div><div class="field"><label>Débito %</label><input id="leoDebit" type="number" step=".01" value="${l.debit??""}"></div></div>
+ <div class="pay-rate-editor">${Array.from({length:18},(_,i)=>`<div class="field"><label>Crédito ${i+1}x %</label><input id="leoC${i+1}" type="number" step=".01" value="${l.credit[i]??""}"></div>`).join("")}</div>
+ <div class="actions safe-admin-gap"><button class="btn gold" onclick="payLeoSave()">Salvar taxas da Leozinha</button></div></section>`
+}
+function payLeoSave(){
+ let c=payCfg(),credit=[];for(let i=1;i<=18;i++){let v=document.getElementById("leoC"+i).value;credit.push(v===""?null:Number(v))}
+ c.leozinha={pix:leoPix.value===""?null:Number(leoPix.value),debit:leoDebit.value===""?null:Number(leoDebit.value),credit,receive:"1 dia útil"};
+ paySaveCfg(c);toast("Taxas da Leozinha salvas");render()
+}
+function payDashboard(){
+ const cfg=payCfg(),inf=cfg.infTier||"ate20",mp=cfg.mpTier||"3";
+ const samples=[10000,30000,50000].map(v=>{let r=payBest(v,"Crédito",12,inf,mp);return r.length?r[0]:null});
+ return `<div class="grid g3 proposal-kpis">${samples.map((x,i)=>`<div class="card kpi"><label>Melhor em ${payMoney([10000,30000,50000][i])} • 12x</label><strong>${x?x.provider:"—"}</strong><small>${x?x.rate.toFixed(2)+"% • líquido "+payMoney(x.net):"Configure taxas"}</small></div>`).join("")}</div>
+ <div class="card pad safe-admin-gap"><div class="pay-head"><span>PAYMENT INTELLIGENCE</span><h3>Motor de decisão por custo líquido</h3><p>O ranking considera a taxa percentual informada para cada adquirente e mostra a alternativa de menor custo para a venda simulada. Para decisões reais, confirme condições promocionais, bandeira, antecipação e seu contrato vigente.</p></div></div>`
+}
+function maquininhas(){
+ const tabs=[["simulador","◎ Simulador Inteligente"],["cockpit","◈ Cockpit"],["taxas","% Taxas"],["leozinha","▣ Leozinha"]];
+ return shell("Maquininhas & Taxas PRO","InfinitePay • Mercado Pago • Leozinha • comparação automática da melhor forma de recebimento",
+ `<button class="btn gold" onclick="paySetTab('simulador')">◎ Simular venda</button>`,
+ `<div class="cm-command"><div><span class="measurement-version">V6.24 • PAYMENT INTELLIGENCE</span><h2>Central Inteligente de Pagamentos</h2><p>Descubra em segundos qual opção deixa mais dinheiro líquido no caixa.</p></div><div class="cm-live"><i></i><span>RATE ENGINE</span><b>ATIVO</b></div></div>
+ <div class="pay-provider-grid"><div><b>InfinitePay</b><span>Pix grátis • crédito até 12x • taxas por faturamento</span></div><div><b>Mercado Pago</b><span>Point • Pix, débito e crédito até 18x • faixas progressivas</span></div><div><b>Leozinha</b><span>Até 18x • recebimento rápido • taxas contratuais editáveis</span></div></div>
+ <div class="cm-tabs">${tabs.map(x=>`<button class="${payTab===x[0]?"active":""}" onclick="paySetTab('${x[0]}')">${x[1]}</button>`).join("")}</div>
+ ${payTab==="simulador"?paySimulator():payTab==="cockpit"?payDashboard():payTab==="taxas"?payRatesTable():payLeoEdit()}`)
+}
