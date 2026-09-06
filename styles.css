@@ -234,3 +234,12 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.hidden{display:
 .label-barcode{display:block;width:100%;height:48px}.prod-label-code .label-barcode{height:42px}
 .prod-label-side{border-left:1px solid #111;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}.prod-label-side .side-code{width:230px;transform:rotate(90deg)}.prod-label-side b{position:absolute;right:3px;bottom:6px;writing-mode:vertical-rl;font-size:8px}
 @media(max-width:900px){.label-preview-grid{grid-template-columns:1fr}.prod-label{min-height:250px}}
+
+/* ===== V6.24.8 • CAPTURA DE LEADS ===== */
+.lead-public-banner{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 20px;margin:14px 0;border:1px solid rgba(201,151,63,.35);border-radius:14px;background:linear-gradient(135deg,rgba(201,151,63,.12),rgba(255,255,255,.015))}
+.lead-public-banner span{font-size:9px;letter-spacing:1.4px;color:var(--gold)}.lead-public-banner h3{margin:4px 0}.lead-public-banner p{margin:0;color:var(--gray)}
+button.deal.lead-deal{width:100%;text-align:left;background:inherit;color:inherit;border:inherit;font:inherit;cursor:pointer}
+.lead-detail-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}.lead-detail-head h2{margin:7px 0 3px}.lead-detail-head p{margin:0;color:var(--gray)}
+.lead-score{width:82px;height:82px;border:1px solid rgba(201,151,63,.45);border-radius:50%;display:flex;flex-direction:column;justify-content:center;align-items:center}.lead-score span{font-size:8px;color:var(--gray)}.lead-score b{font-size:24px;color:var(--gold-light)}
+.lead-attachment{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px dashed rgba(201,151,63,.35);border-radius:10px;margin:12px 0}
+.lead-stage-box{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}.lead-stage-box>label{display:block;font-size:10px;color:var(--gray);margin-bottom:8px}.lead-stage-actions{display:flex;flex-wrap:wrap;gap:6px}

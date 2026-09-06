@@ -363,8 +363,20 @@ function dashboard(){
 }
 function leads(){
  const stages=["Entrada","Qualificação","Construção de Valor","Pré-compromisso","Apresentação","Fechamento","Pós-venda"];
- return shell("Leads & CRM","Pipeline real salvo no Supabase",`<button class="btn gold" onclick="addLead()">+ Novo Lead</button>`,
- `<div class="pipeline">${stages.map(s=>`<div class="stage"><div class="stage-head">${s}<b class="goldtxt">${cache.leads.filter(x=>x.stage===s).length}</b></div>${cache.leads.filter(x=>x.stage===s).map(x=>`<div class="deal"><b>${esc(x.name)}</b><span>${esc(x.whatsapp||"")}</span><span class="goldtxt">${money(x.estimated_investment)}</span><span>Score ${x.score||0}</span></div>`).join("")||`<div class="empty">Sem leads</div>`}</div>`).join("")}</div>`);
+ const total=cache.leads.length,hot=cache.leads.filter(x=>Number(x.score||0)>=75).length,newToday=cache.leads.filter(x=>String(x.created_at||'').slice(0,10)===new Date().toISOString().slice(0,10)).length;
+ return shell("Leads & CRM","Pipeline conectado ao formulário público e salvo no Supabase",
+ `<button class="btn" onclick="window.open('./captura.html','_blank')">↗ Abrir Formulário Público</button><button class="btn gold" onclick="addLead()">+ Novo Lead</button>`,
+ `<div class="grid g4 client-kpis">
+   <div class="card kpi"><label>Total de leads</label><strong>${total}</strong></div>
+   <div class="card kpi"><label>Novos hoje</label><strong class="goldtxt">${newToday}</strong></div>
+   <div class="card kpi"><label>Leads quentes</label><strong>${hot}</strong><small>Score ≥ 75</small></div>
+   <div class="card kpi"><label>Origem pública</label><strong>${cache.leads.filter(x=>String(x.source||'').toLowerCase().includes('whatsapp')).length}</strong></div>
+ </div>
+ <div class="lead-public-banner">
+   <div><span>CAPTURA AUTOMÁTICA</span><h3>WhatsApp → Formulário → CRM</h3><p>Envie o link do formulário ao cliente. Ao concluir, o lead entra automaticamente em <b>Entrada</b>.</p></div>
+   <button class="btn gold" onclick="navigator.clipboard?.writeText(new URL('./captura.html',location.href).href).then(()=>toast('Link copiado'))">Copiar link do formulário</button>
+ </div>
+ <div class="pipeline">${stages.map(s=>`<div class="stage"><div class="stage-head">${s}<b class="goldtxt">${cache.leads.filter(x=>x.stage===s).length}</b></div>${cache.leads.filter(x=>x.stage===s).map(x=>`<button class="deal lead-deal" onclick="viewLead('${x.id}')"><b>${esc(x.name)}</b><span>${esc(x.whatsapp||"")}</span><span>${esc((x.environments||[]).join(" • ")||x.property_status||"")}</span><span class="goldtxt">${money(x.estimated_investment)}</span><span>Score ${x.score||0} • ${esc(x.classification||"Lead")}</span></button>`).join("")||`<div class="empty">Sem leads</div>`}</div>`).join("")}</div>`);
 }
 function addLead(){openModal("Novo Lead",`<div class="form-grid"><div class="field"><label>Nome</label><input id="ln"></div><div class="field"><label>WhatsApp</label><input id="lt"></div><div class="field"><label>Ambiente</label><input id="la"></div><div class="field"><label>Investimento</label><input id="lv" type="number"></div><div class="field"><label>Etapa</label><select id="le">${["Entrada","Qualificação","Construção de Valor","Pré-compromisso","Apresentação","Fechamento","Pós-venda"].map(x=>`<option>${x}</option>`).join("")}</select></div><div class="field"><label>Score</label><input id="ls" type="number" value="50"></div></div>`,`saveLead()`)}
 async function saveLead(){
@@ -372,6 +384,54 @@ async function saveLead(){
  const {error}=await sb.from("leads").insert({company_id:profile.company_id,name:ln.value.trim(),whatsapp:lt.value,environments:la.value?[la.value]:[],estimated_investment:Number(lv.value||0),stage:le.value,score:Number(ls.value||50),created_by:session.user.id});
  if(error)return toast("Erro: "+error.message);
  await persistRefresh("Lead salvo na nuvem",{closeModal:true})
+}
+
+function leadById(id){return cache.leads.find(x=>x.id===id)}
+function leadFmt(v){return v===null||v===undefined||v===''?'—':String(v)}
+async function leadSetStage(id,stage){
+ const {error}=await sb.from("leads").update({stage}).eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ closeModal();
+ await persistRefresh("Lead movido para "+stage)
+}
+async function leadOpenAttachment(path){
+ if(!path)return;
+ if(/^https?:\/\//i.test(path))return window.open(path,'_blank');
+ const {data,error}=await sb.storage.from("lead-attachments").createSignedUrl(path,120);
+ if(error)return toast("Não foi possível abrir o anexo: "+error.message);
+ window.open(data.signedUrl,'_blank')
+}
+function viewLead(id){
+ const x=leadById(id);if(!x)return;
+ const stages=["Entrada","Qualificação","Construção de Valor","Pré-compromisso","Apresentação","Fechamento","Pós-venda"];
+ const env=Array.isArray(x.environments)?x.environments.join(", "):leadFmt(x.environments);
+ const yes=v=>v===true||String(v).toLowerCase()==='true'||String(v).toLowerCase()==='sim';
+ openModal(esc(x.name||"Lead"),`<div class="lead-detail">
+  <div class="lead-detail-head">
+   <div><span class="badge gold">${esc(x.classification||"Lead")}</span><h2>${esc(x.name||"")}</h2><p>${esc(x.whatsapp||"")} ${x.email?`• ${esc(x.email)}`:""}</p></div>
+   <div class="lead-score"><span>SCORE</span><b>${Number(x.score||0)}</b></div>
+  </div>
+  <div class="detail-grid">
+   <div><label>Cidade / Bairro</label><b>${esc([x.city,x.neighborhood].filter(Boolean).join(" • ")||"—")}</b></div>
+   <div><label>Melhor horário</label><b>${esc(leadFmt(x.best_contact_time))}</b></div>
+   <div><label>Ambientes</label><b>${esc(env||"—")}</b></div>
+   <div><label>Área aproximada</label><b>${x.approximate_area?`${Number(x.approximate_area)} m²`:"—"}</b></div>
+   <div><label>Possui projeto?</label><b>${yes(x.has_project)?"Sim":"Não"}</b></div>
+   <div><label>Prazo desejado</label><b>${esc(leadFmt(x.desired_deadline))}</b></div>
+   <div><label>Investimento estimado</label><b class="goldtxt">${money(x.estimated_investment)}</b></div>
+   <div><label>Situação do imóvel</label><b>${esc(leadFmt(x.property_status))}</b></div>
+   <div><label>Decisor</label><b>${esc(leadFmt(x.decision_maker))}</b></div>
+   <div><label>Origem</label><b>${esc(leadFmt(x.source))}</b></div>
+  </div>
+  <div class="detail-notes"><label>Observações do cliente</label><p>${esc(x.notes||"Sem observações.")}</p></div>
+  ${x.attachment_url?`<div class="lead-attachment"><b>📎 Projeto / Planta anexado</b><button class="btn" onclick="leadOpenAttachment('${esc(x.attachment_url)}')">Abrir arquivo</button></div>`:""}
+  <div class="lead-stage-box"><label>Avançar atendimento</label><div class="lead-stage-actions">${stages.filter(s=>s!==x.stage).map(s=>`<button class="btn sm" onclick="leadSetStage('${id}','${s}')">${s}</button>`).join("")}</div></div>
+  <div class="client-quick">
+   ${x.whatsapp?`<button class="btn gold" onclick="window.open('https://wa.me/${String(x.whatsapp).replace(/\D/g,'')}','_blank')">WhatsApp</button>`:""}
+   <button class="btn" onclick="closeModal()">Fechar</button>
+  </div>
+ </div>`,'');
+ modal.classList.add('proposal-modal')
 }
 function clientById(id){return cache.clients.find(x=>x.id===id)}
 function clientWhatsApp(v){return String(v||"").replace(/\D/g,"")}

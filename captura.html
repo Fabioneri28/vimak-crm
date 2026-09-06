@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Solicitação de Projeto • VIMAK Planejados</title>
+<meta name="theme-color" content="#111011">
+<link rel="stylesheet" href="./captura.css">
+</head>
+<body>
+<main class="capture-shell">
+ <section class="capture-brand">
+  <img src="./assets/vimak-logo.jpg" alt="VIMAK Planejados">
+  <span>PROJETO SOB MEDIDA</span>
+  <h1>Conte um pouco sobre o ambiente que você quer transformar.</h1>
+  <p>Leva cerca de 2 minutos. Suas respostas ajudam nossa equipe a entender seu projeto antes do atendimento.</p>
+  <div class="brand-points">
+   <div><b>01</b><span>Preencha os dados</span></div>
+   <div><b>02</b><span>Anexe projeto ou planta</span></div>
+   <div><b>03</b><span>Nossa equipe analisa e retorna</span></div>
+  </div>
+ </section>
+
+ <section class="capture-card">
+  <div class="progress"><span id="progressBar"></span></div>
+  <form id="leadForm" novalidate>
+   <input type="text" id="website" name="website" tabindex="-1" autocomplete="off" class="hp">
+
+   <div class="step active" data-step="1">
+    <div class="step-title"><span>01 / 04</span><h2>Vamos começar por você</h2><p>Dados para nossa equipe entrar em contato.</p></div>
+    <div class="fields">
+     <label class="full">Nome completo *<input id="name" required autocomplete="name" placeholder="Seu nome"></label>
+     <label>WhatsApp *<input id="whatsapp" required inputmode="tel" placeholder="(11) 99999-9999"></label>
+     <label>E-mail<input id="email" type="email" autocomplete="email" placeholder="voce@email.com"></label>
+     <label>Cidade *<input id="city" required placeholder="Sua cidade"></label>
+     <label>Bairro<input id="neighborhood" placeholder="Seu bairro"></label>
+     <label class="full">Melhor horário para falar com você<select id="best_contact_time"><option>Manhã</option><option>Tarde</option><option>Noite</option><option>Qualquer horário</option></select></label>
+    </div>
+   </div>
+
+   <div class="step" data-step="2">
+    <div class="step-title"><span>02 / 04</span><h2>Sobre seu projeto</h2><p>Selecione os ambientes e a situação do imóvel.</p></div>
+    <label class="caption">Ambientes a serem planejados *</label>
+    <div class="choice-grid" id="environmentChoices">
+     <button type="button" data-value="Cozinha">Cozinha</button><button type="button" data-value="Sala">Sala</button>
+     <button type="button" data-value="Quarto">Quarto</button><button type="button" data-value="Closet">Closet</button>
+     <button type="button" data-value="Banheiro">Banheiro</button><button type="button" data-value="Lavanderia">Lavanderia</button>
+     <button type="button" data-value="Home Office">Home Office</button><button type="button" data-value="Área Gourmet">Área Gourmet</button>
+     <button type="button" data-value="Apartamento Inteiro">Apartamento Inteiro</button><button type="button" data-value="Outro">Outro</button>
+    </div>
+    <div class="fields">
+     <label>Área aproximada (m²)<input id="approximate_area" type="number" min="0" step=".1" placeholder="Ex.: 18"></label>
+     <label>Situação do imóvel<select id="property_status"><option>Já moro no imóvel</option><option>Imóvel em reforma</option><option>Aguardando as chaves</option><option>Imóvel em construção</option><option>Ainda estou procurando imóvel</option></select></label>
+     <label>Você já possui projeto ou planta?<select id="has_project"><option value="false">Ainda não</option><option value="true">Sim, tenho projeto/planta</option></select></label>
+     <label>Quem participa da decisão?<select id="decision_maker"><option>Eu decido</option><option>Eu e meu cônjuge/parceiro(a)</option><option>Família</option><option>Outro responsável</option></select></label>
+    </div>
+   </div>
+
+   <div class="step" data-step="3">
+    <div class="step-title"><span>03 / 04</span><h2>Prazo e investimento</h2><p>Não é compromisso de compra. Serve para direcionarmos a solução correta.</p></div>
+    <label class="caption">Quando pretende iniciar?</label>
+    <div class="choice-grid single" id="deadlineChoices">
+     <button type="button" data-value="O quanto antes">O quanto antes</button><button type="button" data-value="30 a 60 dias">30 a 60 dias</button>
+     <button type="button" data-value="2 a 4 meses">2 a 4 meses</button><button type="button" data-value="4 a 6 meses">4 a 6 meses</button>
+     <button type="button" data-value="Mais de 6 meses">Mais de 6 meses</button><button type="button" data-value="Ainda pesquisando">Ainda pesquisando</button>
+    </div>
+    <label class="caption">Faixa de investimento estimada</label>
+    <div class="choice-grid single" id="investmentChoices">
+     <button type="button" data-value="10000">Até R$ 10 mil</button><button type="button" data-value="20000">R$ 10 a 20 mil</button>
+     <button type="button" data-value="35000">R$ 20 a 35 mil</button><button type="button" data-value="50000">R$ 35 a 50 mil</button>
+     <button type="button" data-value="75000">R$ 50 a 75 mil</button><button type="button" data-value="100000">Acima de R$ 75 mil</button>
+    </div>
+   </div>
+
+   <div class="step" data-step="4">
+    <div class="step-title"><span>04 / 04</span><h2>Últimos detalhes</h2><p>Se tiver projeto, planta, croqui ou inspiração, pode anexar.</p></div>
+    <label class="upload-box">
+     <input id="attachment" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp">
+     <b>📎 Anexar projeto ou planta</b><span>PDF ou imagem • até 10 MB</span><small id="fileName">Nenhum arquivo selecionado</small>
+    </label>
+    <label class="notes">Conte algo importante sobre o projeto<textarea id="notes" rows="5" placeholder="Ex.: gosto de tons claros, quero aproveitar uma parede específica, preciso de bastante armazenamento..."></textarea></label>
+    <div class="summary" id="summary"></div>
+   </div>
+
+   <div class="form-actions">
+    <button type="button" id="backBtn" class="ghost" hidden>Voltar</button>
+    <button type="button" id="nextBtn">Continuar</button>
+    <button type="submit" id="submitBtn" hidden>Enviar solicitação</button>
+   </div>
+   <div id="formError" class="form-error"></div>
+  </form>
+
+  <div id="success" class="success" hidden>
+   <div class="success-icon">✓</div>
+   <span>RECEBEMOS SEU PROJETO</span>
+   <h2>Obrigado! Sua solicitação já entrou em nosso atendimento.</h2>
+   <p>Nossa equipe vai analisar as informações e continuar a conversa pelo WhatsApp.</p>
+  </div>
+ </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./captura.js"></script>
+</body>
+</html>
