@@ -2576,35 +2576,110 @@ function finQuickPreview(){
  el.innerHTML=`<div><span>FORMA</span><b>${esc(m)}</b></div><div><span>PARCELAMENTO</span><b>${n}x de ${money(pv)}</b></div><div><span>TOTAL</span><b>${money(a)}</b></div>`
 }
 async function finQuickSave(type){
- const description=document.getElementById("fqDesc").value.trim(),
-       amount=Number(document.getElementById("fqAmount").value||0),
-       date=document.getElementById("fqDate").value,
-       method=document.getElementById("fqMethod").value,
-       installments=Number(document.getElementById("fqInstallments").value||1),
-       bank=document.getElementById("fqBank").value||null,
-       cc=document.getElementById("fqCC").value||null,
-       party=document.getElementById("fqParty").value.trim(),
-       notes=document.getElementById("fqNotes").value.trim();
- if(!description||!amount||!date)return toast("Informe descrição, valor e data");
- const each=Math.round((amount/installments)*100)/100;
- const payload={
-  company_id:profile.company_id,
-  bank_account_id:bank,
-  cost_center_id:cc,
-  transaction_date:date,
-  description,
-  type,
-  amount,
-  currency:"BRL",
-  status:"Confirmado",
-  metadata:{origin:"quick_entry",payment_method:method,installments,installment_value:each,party,notes,created_by:session.user.id}
- };
- const {data,error}=await sb.from("finance_transactions").insert(payload).select().single();
- if(error)return toast("Erro: "+error.message);
- cache.financeTransactions=[data,...(cache.financeTransactions||[])];
- closeModal();
- toast(`${type} registrada • ${method} • ${installments}x`);
- render()
+ const saveBtn=modal?.querySelector?.(".modal-actions .gold");
+ try{
+  if(saveBtn){saveBtn.disabled=true;saveBtn.textContent="Salvando..."}
+  const description=document.getElementById("fqDesc").value.trim(),
+        rawAmount=String(document.getElementById("fqAmount").value||"").replace(",","."),
+        amount=Number(rawAmount||0),
+        date=document.getElementById("fqDate").value,
+        method=document.getElementById("fqMethod").value,
+        installments=Number(document.getElementById("fqInstallments").value||1),
+        bank=document.getElementById("fqBank").value||null,
+        cc=document.getElementById("fqCC").value||null,
+        party=document.getElementById("fqParty").value.trim(),
+        notes=document.getElementById("fqNotes").value.trim();
+  if(!description||!amount||!date){
+   toast("Informe descrição, valor e data");
+   return
+  }
+
+  const each=Math.round((amount/installments)*100)/100;
+  const metadata={
+   origin:"quick_entry",
+   payment_method:method,
+   installments,
+   installment_value:each,
+   party,
+   notes,
+   created_by:session?.user?.id||null
+  };
+  const payload={
+   company_id:profile.company_id,
+   bank_account_id:bank,
+   cost_center_id:cc,
+   transaction_date:date,
+   description,
+   type,
+   amount,
+   currency:"BRL",
+   status:"Confirmado",
+   metadata
+  };
+
+  // Gravação principal: finance_transactions.
+  // Sem .select().single(): evita o caso em que o INSERT grava, mas a resposta
+  // de retorno é bloqueada pela política e o sistema interpreta como erro.
+  const primary=await sb.from("finance_transactions").insert(payload);
+
+  if(!primary.error){
+   cache.financeTransactions=[
+    {id:`local-${Date.now()}`,created_at:new Date().toISOString(),...payload},
+    ...(cache.financeTransactions||[])
+   ];
+   closeModal();
+   toast(`${type} salva com sucesso • ${method} • ${installments}x`);
+   render();
+   return
+  }
+
+  console.warn("[Financeiro] finance_transactions falhou; tentando fallback.",primary.error);
+
+  // Fallback seguro: usa as tabelas financeiras históricas já consolidadas no CRM.
+  // Só executa se a gravação principal falhar, portanto não duplica lançamentos.
+  const recv=type==="Receita";
+  const fallbackTable=recv?"accounts_receivable":"accounts_payable";
+  const fallbackPayload={
+   company_id:profile.company_id,
+   description,
+   amount,
+   due_date:date,
+   status:recv?"Recebido":"Pago",
+   payment_method:method,
+   bank_account_id:bank,
+   cost_center_id:cc,
+   paid_at:new Date(date+"T12:00:00").toISOString(),
+   notes:[
+    `Lançamento rápido`,
+    `Forma: ${method}`,
+    `Parcelas: ${installments}x`,
+    `Valor/parcela: ${money(each)}`,
+    party?`Origem: ${party}`:"",
+    notes?`Obs.: ${notes}`:""
+   ].filter(Boolean).join(" | ")
+  };
+
+  const fallback=await sb.from(fallbackTable).insert(fallbackPayload);
+  if(fallback.error){
+   console.error("[Financeiro] falha principal:",primary.error);
+   console.error("[Financeiro] falha fallback:",fallback.error);
+   toast(`Não foi possível salvar: ${fallback.error.message||primary.error.message}`);
+   return
+  }
+
+  const localRow={id:`local-${Date.now()}`,created_at:new Date().toISOString(),...fallbackPayload};
+  if(recv) cache.accountsReceivable=[localRow,...(cache.accountsReceivable||[])];
+  else cache.accountsPayable=[localRow,...(cache.accountsPayable||[])];
+
+  closeModal();
+  toast(`${type} salva com sucesso • ${method} • ${installments}x`);
+  render()
+ }catch(err){
+  console.error("[Financeiro] erro inesperado ao salvar",err);
+  toast("Erro ao salvar: "+(err?.message||err))
+ }finally{
+  if(saveBtn){saveBtn.disabled=false;saveBtn.textContent="Salvar"}
+ }
 }
 function finTable(type){let recv=type==='receber',arr=recv?cache.accountsReceivable:cache.accountsPayable;return `<div class="card"><div class="fin-panel-head"><div><span>${recv?'RECEIVABLES':'PAYABLES'} CONTROL</span><h3>${recv?'Contas a Receber':'Contas a Pagar'}</h3></div><button class="btn gold" onclick="finNew('${type}')">+ Novo lançamento</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Descrição</th><th>${recv?'Cliente':'Fornecedor'}</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Risco</th><th></th></tr></thead><tbody>${arr.map(x=>{let party=recv?cache.clients.find(c=>c.id===x.client_id)?.name:cache.suppliers.find(c=>c.id===x.supplier_id)?.name,d=finDays(x.due_date);return `<tr><td><b>${esc(x.description||x.title||'Lançamento')}</b></td><td>${esc(party||'—')}</td><td>${finDate(x.due_date)}</td><td><b>${money(x.amount||x.value)}</b></td><td><span class="badge ${finOpenStatus(x.status)?'gold':'ok'}">${esc(x.status||'Aberto')}</span></td><td><span class="badge ${d<0&&finOpenStatus(x.status)?'bad':''}">${d<0&&finOpenStatus(x.status)?`${Math.abs(d)}d atraso`:'Normal'}</span></td><td><button class="btn sm" onclick="finSettle('${type}','${x.id}')">${recv?'Receber':'Pagar'}</button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhum lançamento.</td></tr>'}</tbody></table></div></div>`}
 function finNew(type){let recv=type==='receber';openModal(recv?'Nova Conta a Receber':'Nova Conta a Pagar',`<div class="form-grid"><div class="field full"><label>Descrição</label><input id="fnDesc"></div><div class="field"><label>${recv?'Cliente':'Fornecedor'}</label><select id="fnParty"><option value="">Selecione</option>${(recv?cache.clients:cache.suppliers).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Centro de custo</label><select id="fnCC"><option value="">Sem centro</option>${cache.costCenters.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Vencimento</label><input id="fnDue" type="date"></div><div class="field"><label>Valor</label><input id="fnAmount" type="number" step=".01"></div><div class="field full"><label>Observações</label><textarea id="fnNotes"></textarea></div></div>`,`finSave('${type}')`)}
