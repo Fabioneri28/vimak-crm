@@ -1,4 +1,4 @@
-# VIMAK CRM V6.21 — CEO DASHBOARD 360
+# VIMAK CRM V6.19 — MAQUININHAS & TAXAS PRO
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -294,29 +294,21 @@ CFO Command Center inspirado em práticas de ERP corporativo:
 - A implementação não substitui escrituração contábil/fiscal oficial nem integrações bancárias homologadas.
 
 
-## V6.21 — CEO Dashboard 360
-- Construída diretamente sobre a V6.18 enviada pelo usuário como última base estável.
-- Dashboard executivo com pipeline, forecast, contas a receber/pagar, performance de 6 meses, alertas, funil, produção, montagem, compras e ranking de propostas.
-- Nenhuma migration nova.
-- Núcleo crítico preservado: init, login, loadIdentity e refreshCore não foram alterados.
+## V6.19 — Maquininhas & Taxas PRO
+- Central de adquirência para InfinitePay, Mercado Pago, Leozinha e outras.
+- Taxas próprias por adquirente, bandeira, modalidade, parcelas, tarifa fixa, prazo e vigência.
+- Simulador que ranqueia a melhor maquininha pelo valor líquido real.
+- Precificação reversa: quanto cobrar para receber um líquido desejado.
+- Ledger de vendas, MDR/taxa efetiva, NSU, autorização e agenda de recebíveis.
+- Conciliação manual de liquidações.
+- Não há integração API bancária/adquirente inventada: taxas e vendas são cadastradas/importadas até existir API oficial/credenciais homologadas.
+- Migration aditiva `006_card_acquiring_pro.sql`.
 
 
-## V6.22.1 ADMIN SAFE
-Construída diretamente sobre a V6.21 enviada e confirmada como funcional.
-- Configurações da Empresa completas.
-- Usuários carregados somente ao abrir a página.
-- Auditoria carregada somente ao abrir a página.
-- Planos informativos sem cobrança automática.
-- Nenhuma migration nova.
-- Nenhuma alteração em config.js, index.html ou sw.js.
-- init/login/loadIdentity/refreshCore preservados byte a byte.
-
-
-## V6.23 — Financeiro Inteligente
-- Botões rápidos `+ Receita` e `+ Despesa`.
-- Lançamentos por Pix, Transferência, Maquininha, Dinheiro, Boleto ou Outro.
-- Parcelamento de 1x a 24x.
-- Cálculo automático do valor por parcela.
-- Forma de pagamento, parcelas, origem e observações gravadas no metadata de `finance_transactions`.
-- Lançamentos rápidos passam a compor a DRE/visão gerencial sem alterar o núcleo de autenticação.
-- Nenhuma migration nova.
+## V6.22 — Administração & Governança PRO
+- Configurações completas da empresa + upload de logo.
+- Usuários, funções, ativação/inativação e convites.
+- Auditoria com filtros, detalhes e exportação CSV.
+- Assinatura/Planos com plano atual, recursos e solicitações de alteração.
+- Migration nova: `007_admin_governanca_pro.sql`.
+- Núcleo de autenticação e carregamento da base preservado.

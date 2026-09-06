@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-21-ceo-dashboard-360';
+const CACHE = 'vimak-crm-v6-22-admin-governanca';
 
 const ASSETS = [
   './',
