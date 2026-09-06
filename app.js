@@ -428,10 +428,48 @@ function viewLead(id){
   <div class="lead-stage-box"><label>Avançar atendimento</label><div class="lead-stage-actions">${stages.filter(s=>s!==x.stage).map(s=>`<button class="btn sm" onclick="leadSetStage('${id}','${s}')">${s}</button>`).join("")}</div></div>
   <div class="client-quick">
    ${x.whatsapp?`<button class="btn gold" onclick="window.open('https://wa.me/${String(x.whatsapp).replace(/\D/g,'')}','_blank')">WhatsApp</button>`:""}
+   <button class="btn danger" onclick="deleteLead('${id}')">Excluir lead</button>
    <button class="btn" onclick="closeModal()">Fechar</button>
   </div>
  </div>`,'');
  modal.classList.add('proposal-modal')
+}
+
+async function deleteLead(id){
+ const x=leadById(id);if(!x)return;
+ const name=x.name||"este lead";
+
+ if(!confirm(`Excluir o lead "${name}"?\n\nIsso removerá o lead do CRM e as notificações vinculadas. Esta ação não pode ser desfeita.`))return;
+
+ try{
+  // Remove anexo privado, quando existir.
+  if(x.attachment_url){
+   try{
+    const path=String(x.attachment_url);
+    if(!/^https?:\/\//i.test(path)){
+      await sb.storage.from("lead-attachments").remove([path])
+    }
+   }catch(storageErr){
+    console.warn("[Leads] Não foi possível excluir o anexo; continuando exclusão do lead.",storageErr)
+   }
+  }
+
+  // Notificações usam ON DELETE CASCADE e serão removidas automaticamente.
+  const {error}=await sb.from("leads").delete().eq("id",id);
+  if(error)return toast("Erro ao excluir lead: "+error.message);
+
+  // Limpa também o estado local das notificações para evitar card órfão.
+  if(window.vimakNotifState?.rows){
+    window.vimakNotifState.rows=window.vimakNotifState.rows.filter(n=>n.lead_id!==id);
+    if(window.updateNotificationBadge)updateNotificationBadge()
+  }
+
+  closeModal();
+  await persistRefresh("Lead excluído com sucesso")
+ }catch(err){
+  console.error("[Leads] erro ao excluir",err);
+  toast("Erro ao excluir lead: "+(err?.message||err))
+ }
 }
 function clientById(id){return cache.clients.find(x=>x.id===id)}
 function clientWhatsApp(v){return String(v||"").replace(/\D/g,"")}
