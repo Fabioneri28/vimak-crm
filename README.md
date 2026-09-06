@@ -310,3 +310,13 @@ Construída diretamente sobre a V6.21 enviada e confirmada como funcional.
 - Nenhuma migration nova.
 - Nenhuma alteração em config.js, index.html ou sw.js.
 - init/login/loadIdentity/refreshCore preservados byte a byte.
+
+
+## V6.23 — Financeiro Inteligente
+- Botões rápidos `+ Receita` e `+ Despesa`.
+- Lançamentos por Pix, Transferência, Maquininha, Dinheiro, Boleto ou Outro.
+- Parcelamento de 1x a 24x.
+- Cálculo automático do valor por parcela.
+- Forma de pagamento, parcelas, origem e observações gravadas no metadata de `finance_transactions`.
+- Lançamentos rápidos passam a compor a DRE/visão gerencial sem alterar o núcleo de autenticação.
+- Nenhuma migration nova.

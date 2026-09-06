@@ -2525,7 +2525,16 @@ function finPayableOpen(){return cache.accountsPayable.filter(x=>finOpenStatus(x
 function finBalance(){return cache.bankAccounts.reduce((a,x)=>a+finNum(x.balance||x.current_balance),0)}
 function finMonthKey(d){let x=new Date(d);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}`}
 function finMonths(n=12){let a=[];for(let i=n-1;i>=0;i--){let d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);a.push({key:finMonthKey(d),label:d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')})}return a}
-function finSeries(){return finMonths(12).map(m=>{let rec=cache.accountsReceivable.filter(x=>finMonthKey(x.due_date||x.created_at)===m.key).reduce((a,x)=>a+finNum(x.amount||x.value),0),pay=cache.accountsPayable.filter(x=>finMonthKey(x.due_date||x.created_at)===m.key).reduce((a,x)=>a+finNum(x.amount||x.value),0);return {...m,rec,pay,net:rec-pay}})}
+function finSeries(){
+ return finMonths(12).map(m=>{
+  let rec=cache.accountsReceivable.filter(x=>finMonthKey(x.due_date||x.created_at)===m.key).reduce((a,x)=>a+finNum(x.amount||x.value),0),
+      pay=cache.accountsPayable.filter(x=>finMonthKey(x.due_date||x.created_at)===m.key).reduce((a,x)=>a+finNum(x.amount||x.value),0);
+  const quick=(cache.financeTransactions||[]).filter(x=>x.metadata?.origin==="quick_entry"&&finMonthKey(x.transaction_date||x.created_at)===m.key);
+  rec+=quick.filter(x=>x.type==="Receita").reduce((a,x)=>a+finNum(x.amount),0);
+  pay+=quick.filter(x=>x.type==="Despesa").reduce((a,x)=>a+finNum(x.amount),0);
+  return {...m,rec,pay,net:rec-pay}
+ })
+}
 function finSvgChart(){let a=finSeries(),w=900,h=220,p=28,max=Math.max(1,...a.flatMap(x=>[x.rec,x.pay])),pts=k=>a.map((x,i)=>`${p+i*(w-2*p)/(a.length-1)},${h-p-(x[k]/max)*(h-2*p)}`).join(' ');return `<div class="fin-chart"><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${[0,.25,.5,.75,1].map(v=>`<line x1="${p}" y1="${p+v*(h-2*p)}" x2="${w-p}" y2="${p+v*(h-2*p)}"/>`).join('')}<polyline class="rec" points="${pts('rec')}"/><polyline class="pay" points="${pts('pay')}"/></svg><div class="fin-chart-labels">${a.map(x=>`<span>${x.label}</span>`).join('')}</div><div class="fin-chart-legend"><span><i class="rec"></i>Receber</span><span><i class="pay"></i>Pagar</span></div></div>`}
 function finAging(){let now=new Date(),b=[['A vencer',0],['1–30 dias',0],['31–60 dias',0],['61–90 dias',0],['90+ dias',0]];finReceivableOpen().forEach(x=>{let d=Math.floor((now-new Date(x.due_date))/86400000),v=finNum(x.amount||x.value);if(d<=0)b[0][1]+=v;else if(d<=30)b[1][1]+=v;else if(d<=60)b[2][1]+=v;else if(d<=90)b[3][1]+=v;else b[4][1]+=v});let max=Math.max(1,...b.map(x=>x[1]));return `<div class="fin-aging">${b.map(x=>`<div><header><b>${x[0]}</b><span>${money(x[1])}</span></header><i><em style="width:${x[1]/max*100}%"></em></i></div>`).join('')}</div>`}
 function finCashForecast(){let bal=finBalance(),days=[7,15,30,60,90];return days.map(d=>{let limit=new Date(Date.now()+d*86400000),r=finReceivableOpen().filter(x=>new Date(x.due_date)<=limit).reduce((a,x)=>a+finNum(x.amount||x.value),0),p=finPayableOpen().filter(x=>new Date(x.due_date)<=limit).reduce((a,x)=>a+finNum(x.amount||x.value),0);return {d,r,p,b:bal+r-p}})}
@@ -2533,6 +2542,70 @@ function finRisk(){let alerts=[],overR=finReceivableOpen().filter(x=>finDays(x.d
 function finSetTab(v){finTab=v;render()}
 function finCockpit(){let ro=finReceivableOpen(),po=finPayableOpen(),r=ro.reduce((a,x)=>a+finNum(x.amount||x.value),0),p=po.reduce((a,x)=>a+finNum(x.amount||x.value),0),bal=finBalance(),forecast=finCashForecast(),risks=finRisk(),month=finSeries().at(-1)||{rec:0,pay:0};return `<div class="fin-exec-grid"><section class="fin-main"><div class="fin-panel-head"><div><span>VISÃO EXECUTIVA</span><h3>Receitas x Despesas • 12 meses</h3></div><b>${money(month.rec-month.pay)} <small>resultado mês</small></b></div>${finSvgChart()}</section><section class="fin-liquidity"><span>LIQUIDEZ CONSOLIDADA</span><strong>${money(bal)}</strong><small>Saldo das contas bancárias</small>${forecast.map(x=>`<div><label>${x.d} dias</label><b class="${x.b<0?'red':'green'}">${money(x.b)}</b></div>`).join('')}</section></div>
 <div class="fin-row3"><section class="card"><div class="fin-panel-head"><div><span>CONTAS A RECEBER</span><h3>Aging de carteira</h3></div><b>${money(r)}</b></div>${finAging()}</section><section class="card"><div class="fin-panel-head"><div><span>CAPITAL DE GIRO</span><h3>Projeção de caixa</h3></div></div><div class="fin-forecast">${forecast.map(x=>`<div><span>D+${x.d}</span><b class="${x.b<0?'red':''}">${money(x.b)}</b><small>+${money(x.r)} / -${money(x.p)}</small></div>`).join('')}</div></section><section class="card"><div class="fin-panel-head"><div><span>CONTROL ROOM</span><h3>Riscos & exceções</h3></div><b>${risks.length}</b></div><div class="fin-risks">${risks.map(x=>`<div class="${x[3]}"><b>${x[0]}</b><span>${x[1]}</span><strong>${x[2]}</strong></div>`).join('')||'<div class="ok"><b>Operação saudável</b><span>Nenhuma exceção crítica detectada.</span></div>'}</div></section></div>`}
+function finQuickMethods(){return ["Pix","Transferência","Maquininha","Dinheiro","Boleto","Outro"]}
+function finQuickOpen(type,method="Pix"){
+ const income=type==="Receita";
+ const today=new Date().toISOString().slice(0,10);
+ openModal(`Adicionar ${type}`,`<div class="fin-quick-modal">
+  <div class="fin-quick-type ${income?"income":"expense"}"><span>${income?"ENTRADA":"SAÍDA"}</span><b>${type}</b></div>
+  <div class="form-grid">
+   <div class="field full"><label>Descrição</label><input id="fqDesc" placeholder="${income?"Ex.: Pagamento cozinha cliente Silva":"Ex.: Compra MDF fornecedor"}"></div>
+   <div class="field"><label>Valor total</label><input id="fqAmount" type="number" step=".01" min="0" oninput="finQuickPreview()"></div>
+   <div class="field"><label>Data</label><input id="fqDate" type="date" value="${today}"></div>
+   <div class="field"><label>Forma de pagamento</label><select id="fqMethod" onchange="finQuickMethodChange();finQuickPreview()">${finQuickMethods().map(x=>`<option ${x===method?"selected":""}>${x}</option>`).join("")}</select></div>
+   <div class="field"><label>Parcelas</label><select id="fqInstallments" onchange="finQuickPreview()">${Array.from({length:24},(_,i)=>i+1).map(n=>`<option value="${n}">${n}x</option>`).join("")}</select></div>
+   <div class="field"><label>Conta bancária</label><select id="fqBank"><option value="">Não informar</option>${cache.bankAccounts.map(x=>`<option value="${x.id}">${esc(x.name||x.bank||"Conta")}</option>`).join("")}</select></div>
+   <div class="field"><label>Centro de custo</label><select id="fqCC"><option value="">Sem centro</option>${cache.costCenters.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></div>
+   <div class="field full"><label>Cliente / Fornecedor / Origem</label><input id="fqParty" placeholder="Opcional"></div>
+   <div class="field full"><label>Observações</label><textarea id="fqNotes" placeholder="Informações adicionais"></textarea></div>
+  </div>
+  <div id="fqPreview" class="fin-quick-preview"></div>
+  <div class="notice"><b>Inteligência financeira:</b> o sistema grava forma de pagamento, quantidade de parcelas, valor por parcela e identifica automaticamente Receita ou Despesa no relatório gerencial.</div>
+ </div>`,`finQuickSave('${type}')`);
+ setTimeout(()=>{finQuickMethodChange();finQuickPreview()},0)
+}
+function finQuickMethodChange(){
+ const m=document.getElementById("fqMethod"),p=document.getElementById("fqInstallments");
+ if(!m||!p)return;
+ if(["Pix","Transferência","Dinheiro"].includes(m.value)){p.value="1";p.disabled=true}else p.disabled=false
+}
+function finQuickPreview(){
+ const a=Number(document.getElementById("fqAmount")?.value||0),n=Number(document.getElementById("fqInstallments")?.value||1),m=document.getElementById("fqMethod")?.value||"";
+ const el=document.getElementById("fqPreview");if(!el)return;
+ const pv=n?a/n:a;
+ el.innerHTML=`<div><span>FORMA</span><b>${esc(m)}</b></div><div><span>PARCELAMENTO</span><b>${n}x de ${money(pv)}</b></div><div><span>TOTAL</span><b>${money(a)}</b></div>`
+}
+async function finQuickSave(type){
+ const description=document.getElementById("fqDesc").value.trim(),
+       amount=Number(document.getElementById("fqAmount").value||0),
+       date=document.getElementById("fqDate").value,
+       method=document.getElementById("fqMethod").value,
+       installments=Number(document.getElementById("fqInstallments").value||1),
+       bank=document.getElementById("fqBank").value||null,
+       cc=document.getElementById("fqCC").value||null,
+       party=document.getElementById("fqParty").value.trim(),
+       notes=document.getElementById("fqNotes").value.trim();
+ if(!description||!amount||!date)return toast("Informe descrição, valor e data");
+ const each=Math.round((amount/installments)*100)/100;
+ const payload={
+  company_id:profile.company_id,
+  bank_account_id:bank,
+  cost_center_id:cc,
+  transaction_date:date,
+  description,
+  type,
+  amount,
+  currency:"BRL",
+  status:"Confirmado",
+  metadata:{origin:"quick_entry",payment_method:method,installments,installment_value:each,party,notes,created_by:session.user.id}
+ };
+ const {data,error}=await sb.from("finance_transactions").insert(payload).select().single();
+ if(error)return toast("Erro: "+error.message);
+ cache.financeTransactions=[data,...(cache.financeTransactions||[])];
+ closeModal();
+ toast(`${type} registrada • ${method} • ${installments}x`);
+ render()
+}
 function finTable(type){let recv=type==='receber',arr=recv?cache.accountsReceivable:cache.accountsPayable;return `<div class="card"><div class="fin-panel-head"><div><span>${recv?'RECEIVABLES':'PAYABLES'} CONTROL</span><h3>${recv?'Contas a Receber':'Contas a Pagar'}</h3></div><button class="btn gold" onclick="finNew('${type}')">+ Novo lançamento</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Descrição</th><th>${recv?'Cliente':'Fornecedor'}</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Risco</th><th></th></tr></thead><tbody>${arr.map(x=>{let party=recv?cache.clients.find(c=>c.id===x.client_id)?.name:cache.suppliers.find(c=>c.id===x.supplier_id)?.name,d=finDays(x.due_date);return `<tr><td><b>${esc(x.description||x.title||'Lançamento')}</b></td><td>${esc(party||'—')}</td><td>${finDate(x.due_date)}</td><td><b>${money(x.amount||x.value)}</b></td><td><span class="badge ${finOpenStatus(x.status)?'gold':'ok'}">${esc(x.status||'Aberto')}</span></td><td><span class="badge ${d<0&&finOpenStatus(x.status)?'bad':''}">${d<0&&finOpenStatus(x.status)?`${Math.abs(d)}d atraso`:'Normal'}</span></td><td><button class="btn sm" onclick="finSettle('${type}','${x.id}')">${recv?'Receber':'Pagar'}</button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhum lançamento.</td></tr>'}</tbody></table></div></div>`}
 function finNew(type){let recv=type==='receber';openModal(recv?'Nova Conta a Receber':'Nova Conta a Pagar',`<div class="form-grid"><div class="field full"><label>Descrição</label><input id="fnDesc"></div><div class="field"><label>${recv?'Cliente':'Fornecedor'}</label><select id="fnParty"><option value="">Selecione</option>${(recv?cache.clients:cache.suppliers).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Centro de custo</label><select id="fnCC"><option value="">Sem centro</option>${cache.costCenters.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Vencimento</label><input id="fnDue" type="date"></div><div class="field"><label>Valor</label><input id="fnAmount" type="number" step=".01"></div><div class="field full"><label>Observações</label><textarea id="fnNotes"></textarea></div></div>`,`finSave('${type}')`)}
 async function finSave(type){let recv=type==='receber',party=document.getElementById('fnParty').value,payload={company_id:profile.company_id,description:document.getElementById('fnDesc').value.trim(),due_date:document.getElementById('fnDue').value,amount:+document.getElementById('fnAmount').value||0,status:'Aberto',cost_center_id:document.getElementById('fnCC').value||null,notes:document.getElementById('fnNotes').value.trim()||null};payload[recv?'client_id':'supplier_id']=party||null;if(!payload.description||!payload.due_date||!payload.amount)return toast('Preencha descrição, vencimento e valor');let r=await sb.from(recv?'accounts_receivable':'accounts_payable').insert(payload);if(r.error)return toast('Erro: '+r.error.message);closeModal();toast('Lançamento criado');render()}
@@ -2542,10 +2615,26 @@ function finDRE(){let s=finSeries(),rev=s.reduce((a,x)=>a+x.rec,0),exp=s.reduce(
 function finBudget(){let y=new Date().getFullYear(),bud=cache.financeBudgets.find(x=>Number(x.year)===y),items=bud?cache.financeBudgetItems.filter(x=>x.budget_id===bud.id):[],planned=items.reduce((a,x)=>a+finNum(x.planned_amount),0),actual=items.reduce((a,x)=>a+finNum(x.actual_amount),0);return `<div class="card"><div class="fin-panel-head"><div><span>FP&A • BUDGET & FORECAST</span><h3>Planejamento ${y}</h3></div><button class="btn gold" onclick="finCreateBudget()">+ Budget ${y}</button></div><div class="fin-budget-kpis"><div><span>Planejado</span><b>${money(planned)}</b></div><div><span>Realizado</span><b>${money(actual)}</b></div><div><span>Variação</span><b class="${actual>planned?'red':'green'}">${money(planned-actual)}</b></div><div><span>Execução</span><b>${planned?(actual/planned*100).toFixed(1):'0.0'}%</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Centro / Conta</th><th>Mês</th><th>Planejado</th><th>Realizado</th><th>Variação</th></tr></thead><tbody>${items.map(x=>`<tr><td>${esc(x.category||'Geral')}</td><td>${x.month||'—'}</td><td>${money(x.planned_amount)}</td><td>${money(x.actual_amount)}</td><td>${money(finNum(x.planned_amount)-finNum(x.actual_amount))}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">Crie o budget e importe/cadastre metas financeiras.</td></tr>'}</tbody></table></div></div>`}
 async function finCreateBudget(){let y=new Date().getFullYear();if(cache.financeBudgets.some(x=>Number(x.year)===y))return toast('Budget do ano já existe');let r=await sb.from('finance_budgets').insert({company_id:profile.company_id,name:`Budget ${y}`,year:y,status:'Rascunho',currency:'BRL'});if(r.error)return toast('Erro: '+r.error.message);toast('Budget criado');render()}
 function finGovernance(){let pending=cache.financeApprovals.filter(x=>x.status==='Pendente'),entities=cache.financeEntities;return `<div class="fin-row3"><section class="card"><div class="fin-panel-head"><div><span>GOVERNANÇA</span><h3>Alçadas & Aprovações</h3></div><b>${pending.length}</b></div><p class="fin-copy">Fluxos de aprovação para pagamentos, despesas e exceções financeiras.</p><div class="fin-risks">${pending.slice(0,10).map(x=>`<div class="gold"><b>${esc(x.request_type||'Aprovação')}</b><span>${money(x.amount)} • ${esc(x.status)}</span></div>`).join('')||'<div class="ok"><b>Fila limpa</b><span>Sem aprovações pendentes.</span></div>'}</div></section><section class="card"><div class="fin-panel-head"><div><span>MULTI-ENTITY</span><h3>Empresas & Unidades</h3></div><b>${entities.length||1}</b></div><p class="fin-copy">Estrutura preparada para filiais, holdings, moedas e consolidação futura.</p>${entities.map(x=>`<div class="fin-entity"><b>${esc(x.name)}</b><span>${esc(x.country||'Brasil')} • ${esc(x.currency||'BRL')}</span></div>`).join('')||'<div class="fin-entity"><b>VIMAK Planejados</b><span>Entidade principal • BRL</span></div>'}</section><section class="card"><div class="fin-panel-head"><div><span>AUDIT READY</span><h3>Controles internos</h3></div></div><div class="fin-controls"><span>✓ RLS por empresa</span><span>✓ Trilha de auditoria existente</span><span>✓ Centros de custo</span><span>✓ Segregação por módulos</span><span>○ Workflow maker-checker</span><span>○ Fechamento contábil formal</span></div></section></div>`}
-function financeiro(){let ro=finReceivableOpen().reduce((a,x)=>a+finNum(x.amount||x.value),0),po=finPayableOpen().reduce((a,x)=>a+finNum(x.amount||x.value),0),bal=finBalance(),over=finReceivableOpen().filter(x=>finDays(x.due_date)<0).reduce((a,x)=>a+finNum(x.amount||x.value),0);const tabs=[['cockpit','◈ CFO Cockpit'],['receber','↗ Receber'],['pagar','↘ Pagar'],['tesouraria','▣ Tesouraria'],['dre','▤ DRE'],['budget','◎ Budget & Forecast'],['governanca','◇ Governança']];return shell('Financeiro Enterprise','CFO Control Tower • caixa, capital de giro, performance, planejamento e governança',`<button class="btn" onclick="finSetTab('governanca')">◇ Controles</button><button class="btn gold" onclick="finSetTab('cockpit')">◈ CFO Cockpit</button>`,`<div class="fin-command"><div><span class="measurement-version">V6.18 • GLOBAL FINANCE CONTROL TOWER</span><h2>CFO Command Center</h2><p>Uma visão única de liquidez, recebíveis, pagamentos, performance, planejamento e risco financeiro.</p></div><div class="fin-command-badge"><span>FINANCIAL HEALTH</span><b class="${bal+ro-po>=0?'green':'red'}">${bal+ro-po>=0?'SAUDÁVEL':'ATENÇÃO'}</b></div></div>
-<div class="grid g4 proposal-kpis"><div class="card kpi"><label>Caixa consolidado</label><strong>${money(bal)}</strong></div><div class="card kpi"><label>Contas a receber</label><strong class="green">${money(ro)}</strong></div><div class="card kpi"><label>Contas a pagar</label><strong class="goldtxt">${money(po)}</strong></div><div class="card kpi"><label>Inadimplência</label><strong class="${over?'red':''}">${money(over)}</strong></div></div>
-<div class="fin-tabs">${tabs.map(x=>`<button class="${finTab===x[0]?'active':''}" onclick="finSetTab('${x[0]}')">${x[1]}</button>`).join('')}</div>
-${finTab==='cockpit'?finCockpit():finTab==='receber'?finTable('receber'):finTab==='pagar'?finTable('pagar'):finTab==='tesouraria'?finTreasury():finTab==='dre'?finDRE():finTab==='budget'?finBudget():finGovernance()}`)}
+function financeiro(){
+ let ro=finReceivableOpen().reduce((a,x)=>a+finNum(x.amount||x.value),0),
+     po=finPayableOpen().reduce((a,x)=>a+finNum(x.amount||x.value),0),
+     bal=finBalance(),
+     over=finReceivableOpen().filter(x=>finDays(x.due_date)<0).reduce((a,x)=>a+finNum(x.amount||x.value),0);
+ const tabs=[['cockpit','◈ CFO Cockpit'],['receber','↗ Receber'],['pagar','↘ Pagar'],['tesouraria','▣ Tesouraria'],['dre','▤ DRE'],['budget','◎ Budget & Forecast'],['governanca','◇ Governança']];
+ return shell('Financeiro Enterprise','CFO Control Tower • caixa, capital de giro, performance, planejamento e governança',
+ `<button class="btn fin-income" onclick="finQuickOpen('Receita')">+ Receita</button><button class="btn fin-expense" onclick="finQuickOpen('Despesa')">+ Despesa</button><button class="btn" onclick="finSetTab('governanca')">◇ Controles</button><button class="btn gold" onclick="finSetTab('cockpit')">◈ CFO Cockpit</button>`,
+ `<div class="fin-command"><div><span class="measurement-version">V6.23 • FINANCEIRO INTELIGENTE</span><h2>CFO Command Center</h2><p>Receitas e despesas com meio de pagamento, parcelamento e classificação automática.</p></div><div class="fin-command-badge"><span>FINANCIAL HEALTH</span><b class="${bal+ro-po>=0?'green':'red'}">${bal+ro-po>=0?'SAUDÁVEL':'ATENÇÃO'}</b></div></div>
+ <div class="fin-quick-strip">
+   <button onclick="finQuickOpen('Receita','Pix')"><b>PIX</b><span>Nova receita</span></button>
+   <button onclick="finQuickOpen('Despesa','Pix')"><b>PIX</b><span>Nova despesa</span></button>
+   <button onclick="finQuickOpen('Receita','Transferência')"><b>TED</b><span>Transferência recebida</span></button>
+   <button onclick="finQuickOpen('Despesa','Transferência')"><b>TED</b><span>Transferência paga</span></button>
+   <button onclick="finQuickOpen('Receita','Maquininha')"><b>CAR</b><span>Venda na maquininha</span></button>
+ </div>
+ <div class="grid g4 proposal-kpis"><div class="card kpi"><label>Caixa consolidado</label><strong>${money(bal)}</strong></div><div class="card kpi"><label>Contas a receber</label><strong class="green">${money(ro)}</strong></div><div class="card kpi"><label>Contas a pagar</label><strong class="goldtxt">${money(po)}</strong></div><div class="card kpi"><label>Inadimplência</label><strong class="${over?'red':''}">${money(over)}</strong></div></div>
+ <div class="fin-tabs">${tabs.map(x=>`<button class="${finTab===x[0]?'active':''}" onclick="finSetTab('${x[0]}')">${x[1]}</button>`).join('')}</div>
+ ${finTab==='cockpit'?finCockpit():finTab==='receber'?finTable('receber'):finTab==='pagar'?finTable('pagar'):finTab==='tesouraria'?finTreasury():finTab==='dre'?finDRE():finTab==='budget'?finBudget():finGovernance()}`)
+}
 function maquininhas(){return simpleTable("Maquininhas & Taxas","Tabela card_machines pronta","",["Maquininha","Débito","Crédito","Ações"],[])}
 
 const VIEWS={dashboard,leads,empresa,usuarios,auditoria,planos,clientes,fornecedores,parceiros,posvenda,insumos,propostas,modelos,medicoes,compras,templates,kanban,corte,sobras,cortecloud,equipes,agenda,financeiro,maquininhas};
