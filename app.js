@@ -2587,23 +2587,37 @@ async function finQuickSave(type){
        notes=document.getElementById("fqNotes").value.trim();
  if(!description||!amount||!date)return toast("Informe descrição, valor e data");
  const each=Math.round((amount/installments)*100)/100;
+ const recv=type==="Receita";
+ const table=recv?"accounts_receivable":"accounts_payable";
+ const status=recv?"Recebido":"Pago";
+ const detail=[
+   `Forma: ${method}`,
+   `Parcelas: ${installments}x`,
+   `Valor por parcela: ${money(each)}`,
+   party?`Origem: ${party}`:"",
+   notes?`Obs.: ${notes}`:""
+ ].filter(Boolean).join(" | ");
  const payload={
-  company_id:profile.company_id,
-  bank_account_id:bank,
-  cost_center_id:cc,
-  transaction_date:date,
-  description,
-  type,
-  amount,
-  currency:"BRL",
-  status:"Confirmado",
-  metadata:{origin:"quick_entry",payment_method:method,installments,installment_value:each,party,notes,created_by:session.user.id}
+   company_id:profile.company_id,
+   description,
+   amount,
+   due_date:date,
+   paid_at:new Date(date+"T12:00:00").toISOString(),
+   status,
+   payment_method:method,
+   bank_account_id:bank,
+   cost_center_id:cc,
+   notes:detail
  };
- const {data,error}=await sb.from("finance_transactions").insert(payload).select().single();
- if(error)return toast("Erro: "+error.message);
- cache.financeTransactions=[data,...(cache.financeTransactions||[])];
+ const {data,error}=await sb.from(table).insert(payload).select().single();
+ if(error){
+   console.error("[Financeiro] erro ao gravar",error,payload);
+   return toast("Erro ao salvar: "+error.message)
+ }
+ if(recv) cache.accountsReceivable=[data,...(cache.accountsReceivable||[])];
+ else cache.accountsPayable=[data,...(cache.accountsPayable||[])];
  closeModal();
- toast(`${type} registrada • ${method} • ${installments}x`);
+ toast(`${type} salva com sucesso • ${method} • ${installments}x`);
  render()
 }
 function finTable(type){let recv=type==='receber',arr=recv?cache.accountsReceivable:cache.accountsPayable;return `<div class="card"><div class="fin-panel-head"><div><span>${recv?'RECEIVABLES':'PAYABLES'} CONTROL</span><h3>${recv?'Contas a Receber':'Contas a Pagar'}</h3></div><button class="btn gold" onclick="finNew('${type}')">+ Novo lançamento</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Descrição</th><th>${recv?'Cliente':'Fornecedor'}</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Risco</th><th></th></tr></thead><tbody>${arr.map(x=>{let party=recv?cache.clients.find(c=>c.id===x.client_id)?.name:cache.suppliers.find(c=>c.id===x.supplier_id)?.name,d=finDays(x.due_date);return `<tr><td><b>${esc(x.description||x.title||'Lançamento')}</b></td><td>${esc(party||'—')}</td><td>${finDate(x.due_date)}</td><td><b>${money(x.amount||x.value)}</b></td><td><span class="badge ${finOpenStatus(x.status)?'gold':'ok'}">${esc(x.status||'Aberto')}</span></td><td><span class="badge ${d<0&&finOpenStatus(x.status)?'bad':''}">${d<0&&finOpenStatus(x.status)?`${Math.abs(d)}d atraso`:'Normal'}</span></td><td><button class="btn sm" onclick="finSettle('${type}','${x.id}')">${recv?'Receber':'Pagar'}</button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhum lançamento.</td></tr>'}</tbody></table></div></div>`}

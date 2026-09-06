@@ -320,3 +320,15 @@ Construída diretamente sobre a V6.21 enviada e confirmada como funcional.
 - Forma de pagamento, parcelas, origem e observações gravadas no metadata de `finance_transactions`.
 - Lançamentos rápidos passam a compor a DRE/visão gerencial sem alterar o núcleo de autenticação.
 - Nenhuma migration nova.
+
+
+## V6.23.1 — Financeiro Gravação FIX
+Correção cirúrgica do lançamento rápido de Receita/Despesa.
+Agora `+ Receita` e `+ Despesa` gravam diretamente em `accounts_receivable` / `accounts_payable`, que são as tabelas exibidas pelo Financeiro.
+- Receita salva como `Recebido`.
+- Despesa salva como `Pago`.
+- Data vira vencimento e data de pagamento.
+- Forma de pagamento salva em `payment_method`.
+- Parcelas e valor por parcela ficam registrados em `notes`.
+- Sem migration nova.
+- Login/init/loadIdentity/refreshCore preservados.
