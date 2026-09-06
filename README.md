@@ -1,4 +1,4 @@
-# VIMAK CRM V6.20.5 — BASE OURO COMPLETA
+# VIMAK CRM V6.21 — CEO DASHBOARD 360
 
 Atualização construída sobre a V6.1 funcional.
 
@@ -294,13 +294,8 @@ CFO Command Center inspirado em práticas de ERP corporativo:
 - A implementação não substitui escrituração contábil/fiscal oficial nem integrações bancárias homologadas.
 
 
-## V6.20.5 — Base Ouro Completa
-Reconstruída diretamente da V6.18 enviada e confirmada como estável.
-
-Inclui:
-- V6.18 Financeiro Enterprise completo.
-- V6.19 Maquininhas & Taxas PRO, carregado isoladamente.
-- V6.20 Leads & CRM Intelligence, carregado isoladamente.
-- Login, init, loadIdentity e refreshCore permanecem exatamente iguais à V6.18.
-- Extras de V6.19/V6.20 são consultados somente quando o módulo correspondente é aberto.
-- Se migrations 006/007 ainda não estiverem aplicadas, o núcleo do ERP continua funcionando.
+## V6.21 — CEO Dashboard 360
+- Construída diretamente sobre a V6.18 enviada pelo usuário como última base estável.
+- Dashboard executivo com pipeline, forecast, contas a receber/pagar, performance de 6 meses, alertas, funil, produção, montagem, compras e ranking de propostas.
+- Nenhuma migration nova.
+- Núcleo crítico preservado: init, login, loadIdentity e refreshCore não foram alterados.
