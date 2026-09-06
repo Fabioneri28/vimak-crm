@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-7-1-etiquetas-producao';
+const CACHE = 'vimak-crm-v6-24-9-notificacoes-leads';
 
 const ASSETS = [
   './',
@@ -6,7 +6,11 @@ const ASSETS = [
   './styles.css',
   './app.js',
   './config.js',
-  './manifest.webmanifest'
+  './manifest.webmanifest',
+  './notifications-v6249.js',
+  './captura.html',
+  './captura.css',
+  './captura.js'
 ];
 
 self.addEventListener('install', event => {

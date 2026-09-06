@@ -99,8 +99,17 @@ $("leadForm").onsubmit=async e=>{
    p_classification:classification(score),
    p_source:"WhatsApp / Formulário"
   };
-  const {error}=await sbLead.rpc("capture_public_lead",args);
+  const {data:leadId,error}=await sbLead.rpc("capture_public_lead",args);
   if(error)throw error;
+
+  // Disparo assíncrono do WhatsApp. Se a API da Meta ainda não estiver
+  // configurada, o lead continua salvo normalmente e a notificação no CRM permanece ativa.
+  try{
+    await sbLead.functions.invoke("notify-new-lead",{body:{lead_id:leadId}})
+  }catch(notifyErr){
+    console.warn("Lead salvo; WhatsApp ainda não enviado.",notifyErr)
+  }
+
   $("leadForm").hidden=true;$("success").hidden=false
  }catch(err){
   console.error(err);$("formError").textContent="Não foi possível enviar agora. Tente novamente em instantes.";
