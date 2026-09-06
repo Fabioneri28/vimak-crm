@@ -2522,7 +2522,18 @@ function finDays(v){return Math.ceil((new Date(v)-new Date())/86400000)}
 function finOpenStatus(v){return !['Pago','Recebido','Cancelado','Baixado','Liquidado'].includes(String(v||''))}
 function finReceivableOpen(){return cache.accountsReceivable.filter(x=>finOpenStatus(x.status))}
 function finPayableOpen(){return cache.accountsPayable.filter(x=>finOpenStatus(x.status))}
-function finBalance(){return cache.bankAccounts.reduce((a,x)=>a+finNum(x.balance||x.current_balance),0)}
+function finBalance(){
+ const base=(cache.bankAccounts||[]).reduce((a,x)=>a+finNum(
+   x.current_balance ?? x.balance ?? x.initial_balance ?? 0
+ ),0);
+ const received=(cache.accountsReceivable||[])
+   .filter(x=>!finOpenStatus(x.status))
+   .reduce((a,x)=>a+finNum(x.amount||x.value),0);
+ const paid=(cache.accountsPayable||[])
+   .filter(x=>!finOpenStatus(x.status))
+   .reduce((a,x)=>a+finNum(x.amount||x.value),0);
+ return base+received-paid
+}
 function finMonthKey(d){let x=new Date(d);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}`}
 function finMonths(n=12){let a=[];for(let i=n-1;i>=0;i--){let d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);a.push({key:finMonthKey(d),label:d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')})}return a}
 function finSeries(){
@@ -2595,8 +2606,6 @@ async function finQuickSave(type){
   const recv=type==="Receita";
   const table=recv?"accounts_receivable":"accounts_payable";
   const detail=`${description} • ${method} • ${installments}x${party?` • ${party}`:""}`;
-
-  // Usa SOMENTE colunas garantidas no schema inicial do CRM.
   const payload={
    company_id:profile.company_id,
    description:detail,
@@ -2616,14 +2625,11 @@ async function finQuickSave(type){
    return
   }
 
-  const localRow={id:`local-${Date.now()}`,created_at:new Date().toISOString(),...payload};
-  if(recv) cache.accountsReceivable=[localRow,...(cache.accountsReceivable||[])];
-  else cache.accountsPayable=[localRow,...(cache.accountsPayable||[])];
-
+  await refreshCore();
   closeModal();
   finTab=recv?"receber":"pagar";
-  toast(`${type} salva com sucesso • ${method} • ${installments}x`);
-  render()
+  render();
+  toast(`${type} salva e painel atualizado • ${method} • ${installments}x`)
  }catch(err){
   console.error("[Financeiro] erro inesperado",err);
   toast("Erro ao salvar: "+(err?.message||err))
@@ -2633,8 +2639,50 @@ async function finQuickSave(type){
 }
 function finTable(type){let recv=type==='receber',arr=recv?cache.accountsReceivable:cache.accountsPayable;return `<div class="card"><div class="fin-panel-head"><div><span>${recv?'RECEIVABLES':'PAYABLES'} CONTROL</span><h3>${recv?'Contas a Receber':'Contas a Pagar'}</h3></div><button class="btn gold" onclick="finNew('${type}')">+ Novo lançamento</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Descrição</th><th>${recv?'Cliente':'Fornecedor'}</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Risco</th><th></th></tr></thead><tbody>${arr.map(x=>{let party=recv?cache.clients.find(c=>c.id===x.client_id)?.name:cache.suppliers.find(c=>c.id===x.supplier_id)?.name,d=finDays(x.due_date);return `<tr><td><b>${esc(x.description||x.title||'Lançamento')}</b></td><td>${esc(party||'—')}</td><td>${finDate(x.due_date)}</td><td><b>${money(x.amount||x.value)}</b></td><td><span class="badge ${finOpenStatus(x.status)?'gold':'ok'}">${esc(x.status||'Aberto')}</span></td><td><span class="badge ${d<0&&finOpenStatus(x.status)?'bad':''}">${d<0&&finOpenStatus(x.status)?`${Math.abs(d)}d atraso`:'Normal'}</span></td><td><button class="btn sm" onclick="finSettle('${type}','${x.id}')">${recv?'Receber':'Pagar'}</button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhum lançamento.</td></tr>'}</tbody></table></div></div>`}
 function finNew(type){let recv=type==='receber';openModal(recv?'Nova Conta a Receber':'Nova Conta a Pagar',`<div class="form-grid"><div class="field full"><label>Descrição</label><input id="fnDesc"></div><div class="field"><label>${recv?'Cliente':'Fornecedor'}</label><select id="fnParty"><option value="">Selecione</option>${(recv?cache.clients:cache.suppliers).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Centro de custo</label><select id="fnCC"><option value="">Sem centro</option>${cache.costCenters.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Vencimento</label><input id="fnDue" type="date"></div><div class="field"><label>Valor</label><input id="fnAmount" type="number" step=".01"></div><div class="field full"><label>Observações</label><textarea id="fnNotes"></textarea></div></div>`,`finSave('${type}')`)}
-async function finSave(type){let recv=type==='receber',party=document.getElementById('fnParty').value,payload={company_id:profile.company_id,description:document.getElementById('fnDesc').value.trim(),due_date:document.getElementById('fnDue').value,amount:+document.getElementById('fnAmount').value||0,status:'Aberto',cost_center_id:document.getElementById('fnCC').value||null,notes:document.getElementById('fnNotes').value.trim()||null};payload[recv?'client_id':'supplier_id']=party||null;if(!payload.description||!payload.due_date||!payload.amount)return toast('Preencha descrição, vencimento e valor');let r=await sb.from(recv?'accounts_receivable':'accounts_payable').insert(payload);if(r.error)return toast('Erro: '+r.error.message);closeModal();toast('Lançamento criado');render()}
-async function finSettle(type,id){let recv=type==='receber',table=recv?'accounts_receivable':'accounts_payable',status=recv?'Recebido':'Pago';if(!confirm(`Confirmar como ${status}?`))return;let r=await sb.from(table).update({status,paid_at:new Date().toISOString()}).eq('id',id);if(r.error){r=await sb.from(table).update({status}).eq('id',id)}if(r.error)return toast('Erro: '+r.error.message);toast(status);render()}
+async function finSave(type){
+ let recv=type==='receber',
+     party=document.getElementById('fnParty').value,
+     payload={
+       company_id:profile.company_id,
+       description:document.getElementById('fnDesc').value.trim(),
+       due_date:document.getElementById('fnDue').value,
+       amount:+document.getElementById('fnAmount').value||0,
+       status:'Aberto',
+       cost_center_id:document.getElementById('fnCC').value||null,
+       notes:document.getElementById('fnNotes').value.trim()||null
+     };
+ payload[recv?'client_id':'supplier_id']=party||null;
+ if(!payload.description||!payload.due_date||!payload.amount)
+   return toast('Preencha descrição, vencimento e valor');
+
+ let r=await sb.from(recv?'accounts_receivable':'accounts_payable').insert(payload);
+ if(r.error)return toast('Erro: '+r.error.message);
+
+ await refreshCore();
+ closeModal();
+ finTab=recv?'receber':'pagar';
+ render();
+ toast('Lançamento criado e painel atualizado')
+}
+async function finSettle(type,id){
+ let recv=type==='receber',
+     table=recv?'accounts_receivable':'accounts_payable',
+     status=recv?'Recebido':'Pago';
+ if(!confirm(`Confirmar como ${status}?`))return;
+
+ let r=await sb.from(table)
+   .update({status,paid_at:new Date().toISOString()})
+   .eq('id',id);
+
+ if(r.error){
+   r=await sb.from(table).update({status}).eq('id',id)
+ }
+ if(r.error)return toast('Erro: '+r.error.message);
+
+ await refreshCore();
+ render();
+ toast(`${status} • painel atualizado`)
+}
 function finTreasury(){let forecast=finCashForecast();return `<div class="fin-treasury"><section class="card"><div class="fin-panel-head"><div><span>TREASURY</span><h3>Posição bancária</h3></div><b>${money(finBalance())}</b></div><div class="fin-bank-grid">${cache.bankAccounts.map(x=>`<div><span>${esc(x.bank_name||x.bank||'Banco')}</span><b>${esc(x.name||x.account_name||'Conta')}</b><strong>${money(x.balance||x.current_balance)}</strong><small>${esc(x.currency||'BRL')}</small></div>`).join('')||'<div class="empty">Cadastre contas bancárias para consolidar tesouraria.</div>'}</div></section><section class="card"><div class="fin-panel-head"><div><span>LIQUIDITY FORECAST</span><h3>Horizonte de caixa</h3></div></div><div class="fin-horizon">${forecast.map(x=>`<div><b>D+${x.d}</b><strong class="${x.b<0?'red':'green'}">${money(x.b)}</strong><span>Entradas ${money(x.r)}</span><span>Saídas ${money(x.p)}</span></div>`).join('')}</div></section></div>`}
 function finDRE(){let s=finSeries(),rev=s.reduce((a,x)=>a+x.rec,0),exp=s.reduce((a,x)=>a+x.pay,0),ebitda=rev-exp,margin=rev?ebitda/rev*100:0;return `<div class="fin-statement"><div class="fin-statement-title"><span>MANAGEMENT P&L</span><h2>DRE Gerencial • últimos 12 meses</h2></div>${[['Receita operacional',rev,'rev'],['(-) Custos e despesas',-exp,'cost'],['EBITDA / Resultado operacional',ebitda,'total'],['Margem operacional',margin,'pct']].map(x=>`<div class="${x[2]}"><b>${x[0]}</b><strong>${x[2]==='pct'?x[1].toFixed(1)+'%':money(x[1])}</strong></div>`).join('')}<div class="notice">DRE gerencial baseada nos títulos de receber/pagar disponíveis. Para contabilidade societária completa, plano de contas, competência, impostos e lançamentos contábeis devem ser classificados formalmente.</div></div>`}
 function finBudget(){let y=new Date().getFullYear(),bud=cache.financeBudgets.find(x=>Number(x.year)===y),items=bud?cache.financeBudgetItems.filter(x=>x.budget_id===bud.id):[],planned=items.reduce((a,x)=>a+finNum(x.planned_amount),0),actual=items.reduce((a,x)=>a+finNum(x.actual_amount),0);return `<div class="card"><div class="fin-panel-head"><div><span>FP&A • BUDGET & FORECAST</span><h3>Planejamento ${y}</h3></div><button class="btn gold" onclick="finCreateBudget()">+ Budget ${y}</button></div><div class="fin-budget-kpis"><div><span>Planejado</span><b>${money(planned)}</b></div><div><span>Realizado</span><b>${money(actual)}</b></div><div><span>Variação</span><b class="${actual>planned?'red':'green'}">${money(planned-actual)}</b></div><div><span>Execução</span><b>${planned?(actual/planned*100).toFixed(1):'0.0'}%</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Centro / Conta</th><th>Mês</th><th>Planejado</th><th>Realizado</th><th>Variação</th></tr></thead><tbody>${items.map(x=>`<tr><td>${esc(x.category||'Geral')}</td><td>${x.month||'—'}</td><td>${money(x.planned_amount)}</td><td>${money(x.actual_amount)}</td><td>${money(finNum(x.planned_amount)-finNum(x.actual_amount))}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">Crie o budget e importe/cadastre metas financeiras.</td></tr>'}</tbody></table></div></div>`}
