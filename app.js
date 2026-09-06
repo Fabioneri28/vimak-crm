@@ -221,6 +221,19 @@ async function render(){
   await refreshCore();
   content.innerHTML=(VIEWS[page]||dashboard)();
 }
+
+async function persistRefresh(message="",opts={}){
+ try{
+  await refreshCore();
+ }catch(err){
+  console.error("[VIMAK] Falha ao atualizar cache após persistência",err);
+ }
+ if(opts.closeModal)closeModal();
+ if(opts.removeProposalModal)modal.classList.remove("proposal-modal");
+ if(opts.finTab)finTab=opts.finTab;
+ render();
+ if(message)toast(message)
+}
 function dbNum(v){return Number(v||0)}
 function dbMoney(v){return money(dbNum(v))}
 function dbStatus(x){return String(x?.status||'')}
@@ -358,7 +371,7 @@ async function saveLead(){
  if(!ln.value.trim())return toast("Informe o nome");
  const {error}=await sb.from("leads").insert({company_id:profile.company_id,name:ln.value.trim(),whatsapp:lt.value,environments:la.value?[la.value]:[],estimated_investment:Number(lv.value||0),stage:le.value,score:Number(ls.value||50),created_by:session.user.id});
  if(error)return toast("Erro: "+error.message);
- closeModal();toast("Lead salvo na nuvem");render();
+ await persistRefresh("Lead salvo na nuvem",{closeModal:true})
 }
 function clientById(id){return cache.clients.find(x=>x.id===id)}
 function clientWhatsApp(v){return String(v||"").replace(/\D/g,"")}
@@ -400,7 +413,7 @@ async function saveClient(id=null){
  if(id){({error}=await sb.from("clients").update(payload).eq("id",id));}
  else {payload.created_by=session.user.id;({error}=await sb.from("clients").insert(payload));}
  if(error)return toast("Erro: "+error.message);
- closeModal();toast(id?"Cliente atualizado":"Cliente salvo na nuvem");render();
+ await persistRefresh(id?"Cliente atualizado":"Cliente salvo na nuvem",{closeModal:true})
 }
 function editClient(id){
  const x=clientById(id); if(!x)return toast("Cliente não encontrado");
@@ -421,11 +434,8 @@ async function deleteClient(id){
  if(!confirm(`Excluir o cliente "${x.name}"? Esta ação não pode ser desfeita.`))return;
  const {error}=await sb.from("clients").delete().eq("id",id);
  if(error)return toast("Erro: "+error.message);
- toast("Cliente excluído");render();
+ await persistRefresh("Cliente excluído")
 }
-let proposalDraftItems=[];
-let proposalEditingId=null;
-
 function proposalById(id){return cache.proposals.find(x=>x.id===id)}
 function proposalClient(id){return cache.clients.find(x=>x.id===id)}
 function proposalPartner(id){return cache.partners.find(x=>x.id===id)}
@@ -637,44 +647,36 @@ async function saveProposal(id=""){
     }
     if(itemError)return toast("Proposta salva, mas um item falhou: "+itemError.message);
   }
-  modal.classList.remove("proposal-modal");
-  closeModal();
-  toast(id?"Proposta atualizada":"Proposta criada com sucesso");
-  render();
+  await persistRefresh(id?"Proposta atualizada":"Proposta criada com sucesso",{closeModal:true,removeProposalModal:true});
 }
 async function updateProposalStatus(id,status){
-  const payload={status};
-  if(status==="Aprovado")payload.approved_at=new Date().toISOString();
-  if(status!=="Aprovado")payload.approved_at=null;
-  const {error}=await sb.from("proposals").update(payload).eq("id",id);
-  if(error)return toast("Erro: "+error.message);
-  toast("Status atualizado para "+status);render();
+ const payload={status};
+ if(status==="Aprovado")payload.approved_at=new Date().toISOString();
+ if(status!=="Aprovado")payload.approved_at=null;
+ const {error}=await sb.from("proposals").update(payload).eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ await persistRefresh("Status atualizado para "+status)
 }
 async function duplicateProposal(id){
-  const x=proposalById(id);if(!x)return;
-  if(!confirm(`Duplicar ${proposalNumber(x.number)}?`))return;
-  const payload={...x};
-  ["id","number","created_at","updated_at","approved_at"].forEach(k=>delete payload[k]);
-  payload.title=(x.title||"Proposta")+" • Cópia";
-  payload.status="Orçado";
-  payload.created_by=session.user.id;
-  const {data,error}=await sb.from("proposals").insert(payload).select("id").single();
-  if(error)return toast("Erro: "+error.message);
-  const items=proposalItems(id).map(i=>{
-    const y={...i};["id","created_at","updated_at"].forEach(k=>delete y[k]);y.proposal_id=data.id;return y;
-  });
-  if(items.length){
-    const ins=await sb.from("proposal_items").insert(items);
-    if(ins.error)return toast("Proposta duplicada, mas itens falharam: "+ins.error.message);
-  }
-  toast("Proposta duplicada");render();
+ const x=proposalById(id);if(!x)return;
+ if(!confirm(`Duplicar ${proposalNumber(x.number)}?`))return;
+ const payload={...x};
+ ["id","number","created_at","updated_at","approved_at"].forEach(k=>delete payload[k]);
+ payload.title=(x.title||"Proposta")+" • Cópia";
+ payload.status="Orçado";
+ payload.created_by=session.user.id;
+ const {data,error}=await sb.from("proposals").insert(payload).select("id").single();
+ if(error)return toast("Erro: "+error.message);
+ const items=proposalItems(id).map(i=>{const y={...i};["id","created_at","updated_at"].forEach(k=>delete y[k]);y.proposal_id=data.id;return y;});
+ if(items.length){const ins=await sb.from("proposal_items").insert(items);if(ins.error)return toast("Proposta duplicada, mas itens falharam: "+ins.error.message);}
+ await persistRefresh("Proposta duplicada")
 }
 async function deleteProposal(id){
-  const x=proposalById(id);if(!x)return;
-  if(!confirm(`Excluir definitivamente ${proposalNumber(x.number)}? Os itens vinculados também serão removidos.`))return;
-  const {error}=await sb.from("proposals").delete().eq("id",id);
-  if(error)return toast("Erro: "+error.message);
-  toast("Proposta excluída");render();
+ const x=proposalById(id);if(!x)return;
+ if(!confirm(`Excluir definitivamente ${proposalNumber(x.number)}? Os itens vinculados também serão removidos.`))return;
+ const {error}=await sb.from("proposals").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ await persistRefresh("Proposta excluída")
 }
 function viewProposal(id){
   const x=proposalById(id);if(!x)return;
@@ -840,7 +842,7 @@ async function cfgSaveSafe(){
  if(!payload.name)return toast("Informe o nome da empresa");
  const {data,error}=await sb.from("companies").update(payload).eq("id",company.id).select().single();
  if(error)return toast("Erro: "+error.message);
- company=data;syncChrome();toast("Configurações salvas")
+ company=data;syncChrome();await refreshCore();render();toast("Configurações salvas")
 }
 async function cfgLogoSafe(input){
  const file=input.files?.[0];if(!file)return;
@@ -851,7 +853,7 @@ async function cfgLogoSafe(input){
  const url=sb.storage.from("company-logos").getPublicUrl(path).data.publicUrl;
  const {data,error}=await sb.from("companies").update({logo_url:url,updated_at:new Date().toISOString()}).eq("id",company.id).select().single();
  if(error)return toast("Erro: "+error.message);
- company=data;syncChrome();render();toast("Logo atualizada")
+ company=data;syncChrome();await refreshCore();render();toast("Logo atualizada")
 }
 async function usrLoadSafe(){
  if(adminSafe.loadingProfiles)return;
@@ -946,23 +948,12 @@ function addSupplier(){openModal("Novo Fornecedor",supplierForm(),`saveSupplier(
 async function saveSupplier(id=null){
  const name=document.getElementById("sn").value.trim();
  if(!name)return toast("Informe o nome do fornecedor");
- const payload={
-   company_id:profile.company_id,
-   name,
-   type:st.value,
-   document:sd.value.trim(),
-   contact_name:sc.value.trim(),
-   phone:sp.value.trim(),
-   email:se.value.trim(),
-   website:sw.value.trim(),
-   notes:snotes.value.trim(),
-   active:sa.value==="true"
- };
+ const payload={company_id:profile.company_id,name,type:st.value,document:sd.value.trim(),contact_name:sc.value.trim(),phone:sp.value.trim(),email:se.value.trim(),website:sw.value.trim(),notes:snotes.value.trim(),active:sa.value==="true"};
  let error;
  if(id){({error}=await sb.from("suppliers").update(payload).eq("id",id));}
  else {({error}=await sb.from("suppliers").insert(payload));}
  if(error)return toast("Erro: "+error.message);
- closeModal();toast(id?"Fornecedor atualizado":"Fornecedor salvo na nuvem");render();
+ await persistRefresh(id?"Fornecedor atualizado":"Fornecedor salvo na nuvem",{closeModal:true})
 }
 function editSupplier(id){
  const x=supplierById(id); if(!x)return toast("Fornecedor não encontrado");
@@ -993,7 +984,7 @@ async function deleteSupplier(id){
  if(!confirm(`Excluir o fornecedor "${x.name}"? Compras e insumos vinculados podem impedir a exclusão.`))return;
  const {error}=await sb.from("suppliers").delete().eq("id",id);
  if(error)return toast("Erro: "+error.message);
- toast("Fornecedor excluído");render();
+ await persistRefresh("Fornecedor excluído")
 }
 function partnerById(id){return cache.partners.find(x=>x.id===id)}
 function partnerPhone(v){return String(v||"").replace(/\D/g,"")}
@@ -1048,22 +1039,12 @@ function addPartner(){openModal("Novo Parceiro",partnerForm(),`savePartner()`)}
 async function savePartner(id=null){
  const name=document.getElementById("pan").value.trim();
  if(!name)return toast("Informe o nome do parceiro");
- const payload={
-   company_id:profile.company_id,
-   name,
-   type:pat.value,
-   phone:pap.value.trim(),
-   email:pae.value.trim(),
-   commission_rate:Number(par.value||0),
-   pix_key:papix.value.trim(),
-   notes:panotes.value.trim(),
-   active:paa.value==="true"
- };
+ const payload={company_id:profile.company_id,name,type:pat.value,phone:pap.value.trim(),email:pae.value.trim(),commission_rate:Number(par.value||0),pix_key:papix.value.trim(),notes:panotes.value.trim(),active:paa.value==="true"};
  let error;
  if(id){({error}=await sb.from("partners").update(payload).eq("id",id));}
  else {({error}=await sb.from("partners").insert(payload));}
  if(error)return toast("Erro: "+error.message);
- closeModal();toast(id?"Parceiro atualizado":"Parceiro salvo na nuvem");render();
+ await persistRefresh(id?"Parceiro atualizado":"Parceiro salvo na nuvem",{closeModal:true})
 }
 function editPartner(id){
  const x=partnerById(id); if(!x)return toast("Parceiro não encontrado");
@@ -1092,7 +1073,7 @@ async function deletePartner(id){
  if(!confirm(`Excluir o parceiro "${x.name}"? Propostas vinculadas podem impedir a exclusão.`))return;
  const {error}=await sb.from("partners").delete().eq("id",id);
  if(error)return toast("Erro: "+error.message);
- toast("Parceiro excluído");render();
+ await persistRefresh("Parceiro excluído")
 }
 function afterSaleById(id){return cache.afterSales.find(x=>x.id===id)}
 function afterSaleClient(id){return cache.clients.find(x=>x.id===id)}
@@ -1156,22 +1137,12 @@ async function saveAfterSale(id=null){
  if(!clientId)return toast("Selecione o cliente");
  if(!description)return toast("Descreva o chamado");
  const status=ass.value;
- const payload={
-   company_id:profile.company_id,
-   client_id:clientId,
-   proposal_id:aspr.value||null,
-   service_type:ast.value,
-   description,
-   status,
-   priority:asp.value,
-   cost:Number(asco.value||0),
-   closed_at:status==="Concluído"?new Date().toISOString():null
- };
+ const payload={company_id:profile.company_id,client_id:clientId,proposal_id:aspr.value||null,service_type:ast.value,description,status,priority:asp.value,cost:Number(asco.value||0),closed_at:status==="Concluído"?new Date().toISOString():null};
  let error;
  if(id){({error}=await sb.from("after_sales_tickets").update(payload).eq("id",id));}
  else {({error}=await sb.from("after_sales_tickets").insert(payload));}
  if(error)return toast("Erro: "+error.message);
- closeModal();toast(id?"Chamado atualizado":"Chamado aberto na nuvem");render();
+ await persistRefresh(id?"Chamado atualizado":"Chamado aberto na nuvem",{closeModal:true})
 }
 function editAfterSale(id){
  const x=afterSaleById(id); if(!x)return toast("Chamado não encontrado");
@@ -1202,7 +1173,7 @@ async function deleteAfterSale(id){
  if(!confirm("Excluir este chamado de pós-venda? Esta ação não pode ser desfeita."))return;
  const {error}=await sb.from("after_sales_tickets").delete().eq("id",id);
  if(error)return toast("Erro: "+error.message);
- toast("Chamado excluído");render();
+ await persistRefresh("Chamado excluído")
 }
 function inputById(id){return cache.inputs.find(x=>x.id===id)}
 function inputSupplier(id){return cache.suppliers.find(x=>x.id===id)}
@@ -1260,25 +1231,12 @@ function insumos(){
 function addInput(){openModal("Novo Insumo",inputForm(),`saveInput()`)}
 async function saveInput(id=null){
  const name=inn.value.trim(); if(!name)return toast("Informe o nome do insumo");
- const payload={
-   company_id:profile.company_id,
-   name,
-   type:int.value,
-   unit:inu.value,
-   unit_cost:Number(inc.value||0),
-   stock_qty:Number(ins.value||0),
-   min_stock:Number(inm.value||0),
-   supplier_id:inf.value||null,
-   sku:insk.value.trim()||null,
-   brand:inb.value.trim()||null,
-   active:ina.value==="true",
-   notes:ino.value.trim()||null
- };
+ const payload={company_id:profile.company_id,name,type:int.value,unit:inu.value,unit_cost:Number(inc.value||0),stock_qty:Number(ins.value||0),min_stock:Number(inm.value||0),supplier_id:inf.value||null,sku:insk.value.trim()||null,brand:inb.value.trim()||null,active:ina.value==="true",notes:ino.value.trim()||null};
  let error;
  if(id){({error}=await sb.from("inputs").update(payload).eq("id",id));}
  else {({error}=await sb.from("inputs").insert(payload));}
  if(error)return toast("Erro: "+error.message);
- closeModal();toast(id?"Insumo atualizado":"Insumo salvo na nuvem");render();
+ await persistRefresh(id?"Insumo atualizado":"Insumo salvo na nuvem",{closeModal:true})
 }
 function editInput(id){const x=inputById(id);if(!x)return toast("Insumo não encontrado");openModal("Editar Insumo",inputForm(x),`saveInput('${id}')`)}
 function viewInput(id){
@@ -1303,10 +1261,8 @@ async function deleteInput(id){
  if(!confirm("Excluir este insumo? Esta ação não pode ser desfeita."))return;
  const {error}=await sb.from("inputs").delete().eq("id",id);
  if(error)return toast("Erro: "+error.message);
- toast("Insumo excluído");render();
+ await persistRefresh("Insumo excluído")
 }
-let modelDraftItems=[];
-
 function proposalModelById(id){return cache.proposalModels.find(x=>x.id===id)}
 function proposalModelBody(x){return (x&&x.body&&typeof x.body==="object")?x.body:{}}
 function modelItemTotal(x){return Number(x.qty||0)*Number(x.unit_price||0)}
@@ -1429,47 +1385,37 @@ function editProposalModel(id){
   openModal("Editar Modelo de Proposta",modelForm(x),`saveProposalModel('${id}')`);modal.classList.add("proposal-modal");setTimeout(refreshModelDraft,0);
 }
 async function saveProposalModel(id=""){
-  const name=document.getElementById("mname")?.value.trim();
-  if(!name)return toast("Informe o nome do modelo");
-  if(modelDraftItems.some(x=>!String(x.description||"").trim()))return toast("Há item sem descrição");
-  const environments=(document.getElementById("menvs")?.value||"").split(",").map(x=>x.trim()).filter(Boolean);
-  const body={
-    items:modelDraftItems,
-    validity_days:Number(document.getElementById("mvalid").value||15),
-    delivery_days:Number(document.getElementById("mdelivery").value||0),
-    warranty_months:Number(document.getElementById("mwarranty").value||0),
-    payment_terms:document.getElementById("mpayment").value.trim()||null,
-    notes:document.getElementById("mnotes").value.trim()||null,
-    discount:Number(document.getElementById("mdiscount").value||0),
-    assembly_fee:Number(document.getElementById("massembly").value||0),
-    freight:Number(document.getElementById("mfreight").value||0)
-  };
-  const payload={company_id:profile.company_id,name,environments,body,active:document.getElementById("mactive").value==="true"};
-  let error;
-  if(id){({error}=await sb.from("proposal_models").update(payload).eq("id",id));}
-  else{({error}=await sb.from("proposal_models").insert(payload));}
-  if(error)return toast("Erro: "+error.message);
-  modal.classList.remove("proposal-modal");closeModal();toast(id?"Modelo atualizado":"Modelo salvo na nuvem");render();
+ const name=document.getElementById("mname")?.value.trim();
+ if(!name)return toast("Informe o nome do modelo");
+ if(modelDraftItems.some(x=>!String(x.description||"").trim()))return toast("Há item sem descrição");
+ const environments=(document.getElementById("menvs")?.value||"").split(",").map(x=>x.trim()).filter(Boolean);
+ const body={items:modelDraftItems,validity_days:Number(document.getElementById("mvalid").value||15),delivery_days:Number(document.getElementById("mdelivery").value||0),warranty_months:Number(document.getElementById("mwarranty").value||0),payment_terms:document.getElementById("mpayment").value.trim()||null,notes:document.getElementById("mnotes").value.trim()||null,discount:Number(document.getElementById("mdiscount").value||0),assembly_fee:Number(document.getElementById("massembly").value||0),freight:Number(document.getElementById("mfreight").value||0)};
+ const payload={company_id:profile.company_id,name,environments,body,active:document.getElementById("mactive").value==="true"};
+ let error;
+ if(id){({error}=await sb.from("proposal_models").update(payload).eq("id",id));}
+ else{({error}=await sb.from("proposal_models").insert(payload));}
+ if(error)return toast("Erro: "+error.message);
+ await persistRefresh(id?"Modelo atualizado":"Modelo salvo na nuvem",{closeModal:true,removeProposalModal:true})
 }
 async function duplicateProposalModel(id){
-  const x=proposalModelById(id);if(!x)return;
-  const payload={company_id:profile.company_id,name:(x.name||"Modelo")+" • Cópia",environments:x.environments||[],body:x.body||{},active:true};
-  const {error}=await sb.from("proposal_models").insert(payload);
-  if(error)return toast("Erro: "+error.message);
-  toast("Modelo duplicado");render();
+ const x=proposalModelById(id);if(!x)return;
+ const payload={company_id:profile.company_id,name:(x.name||"Modelo")+" • Cópia",environments:x.environments||[],body:x.body||{},active:true};
+ const {error}=await sb.from("proposal_models").insert(payload);
+ if(error)return toast("Erro: "+error.message);
+ await persistRefresh("Modelo duplicado")
 }
 async function toggleProposalModel(id){
-  const x=proposalModelById(id);if(!x)return;
-  const {error}=await sb.from("proposal_models").update({active:!x.active}).eq("id",id);
-  if(error)return toast("Erro: "+error.message);
-  toast(!x.active?"Modelo ativado":"Modelo inativado");render();
+ const x=proposalModelById(id);if(!x)return;
+ const {error}=await sb.from("proposal_models").update({active:!x.active}).eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ await persistRefresh(!x.active?"Modelo ativado":"Modelo inativado")
 }
 async function deleteProposalModel(id){
-  const x=proposalModelById(id);if(!x)return;
-  if(!confirm(`Excluir o modelo "${x.name}"?`))return;
-  const {error}=await sb.from("proposal_models").delete().eq("id",id);
-  if(error)return toast("Erro: "+error.message);
-  toast("Modelo excluído");render();
+ const x=proposalModelById(id);if(!x)return;
+ if(!confirm(`Excluir o modelo "${x.name}"?`))return;
+ const {error}=await sb.from("proposal_models").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ await persistRefresh("Modelo excluído")
 }
 function viewProposalModel(id){
   const x=proposalModelById(id);if(!x)return;
@@ -2002,13 +1948,13 @@ async function saveMeasurement(statusOverride="",silent=false){
   await refreshCore();render();return true;
 }
 async function deleteMeasurement(id){
-  const x=measurementById(id);if(!x)return;
-  if(!confirm(`Excluir ${measurementCode(x)}? Os arquivos vinculados também serão removidos.`))return;
-  const paths=measurementAttachments(x).map(a=>a.path).filter(Boolean);
-  if(paths.length)await sb.storage.from("crm-documents").remove(paths);
-  const {error}=await sb.from("measurements").delete().eq("id",id);
-  if(error)return toast("Erro: "+error.message);
-  toast("Medição excluída");render();
+ const x=measurementById(id);if(!x)return;
+ if(!confirm(`Excluir ${measurementCode(x)}? Os arquivos vinculados também serão removidos.`))return;
+ const paths=measurementAttachments(x).map(a=>a.path).filter(Boolean);
+ if(paths.length)await sb.storage.from("crm-documents").remove(paths);
+ const {error}=await sb.from("measurements").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ await persistRefresh("Medição excluída")
 }
 function viewMeasurement(id){editMeasurement(id)}
 function measurementHistoryHTML(){
@@ -2213,16 +2159,17 @@ async function savePurchase(id=""){
  if(error)return toast("Erro: "+error.message);
  const rows=purchaseDraftItems.map(i=>({company_id:profile.company_id,purchase_order_id:orderId,input_id:i.input_id||null,description:i.description,qty:Number(i.qty||0),unit_cost:Number(i.unit_cost||0),total:Number(i.qty||0)*Number(i.unit_cost||0)}));
  const ins=await sb.from("purchase_order_items").insert(rows);if(ins.error)return toast("Pedido salvo, mas houve erro nos itens: "+ins.error.message);
- closeModal();toast(id?"Pedido atualizado":"Pedido de compra criado");render()
+ await persistRefresh(id?"Pedido atualizado":"Pedido de compra criado",{closeModal:true})
 }
 async function purchaseSetStatus(id,status){
  const patch={status};if(status==="Recebido")patch.received_at=new Date().toISOString();
  const {error}=await sb.from("purchase_orders").update(patch).eq("id",id);if(error)return toast("Erro: "+error.message);
- toast("Status atualizado");render()
+ await persistRefresh("Status atualizado")
 }
 async function deletePurchase(id){
  const x=purchaseOrderById(id);if(!x||!confirm(`Excluir ${purchaseCode(x)}?`))return;
- const {error}=await sb.from("purchase_orders").delete().eq("id",id);if(error)return toast("Erro: "+error.message);toast("Pedido excluído");render()
+ const {error}=await sb.from("purchase_orders").delete().eq("id",id);if(error)return toast("Erro: "+error.message);
+ await persistRefresh("Pedido excluído")
 }
 function viewPurchase(id){
  const x=purchaseOrderById(id);if(!x)return;const sup=purchaseSupplier(x.supplier_id),prop=purchaseProposal(x.proposal_id),it=purchaseItems(id);
@@ -2279,10 +2226,29 @@ function insertTemplateVar(v){const ta=document.getElementById('tplContent');if(
 function refreshTemplateVars(){const txt=document.getElementById('tplContent')?.value||'';const vars=[...new Set(txt.match(/{{[^}]+}}/g)||[])];const el=document.getElementById('tplVarCount');if(el)el.value=`${vars.length} variáveis`}
 function addDocTemplate(){openModal('Novo Template de Documento',templateForm(),`saveDocTemplate()`);modal.classList.add('proposal-modal');setTimeout(refreshTemplateVars,0)}
 function editDocTemplate(id){const x=docTemplateById(id);if(!x)return;openModal('Editar Template',templateForm(x),`saveDocTemplate('${id}')`);modal.classList.add('proposal-modal');setTimeout(refreshTemplateVars,0)}
-async function saveDocTemplate(id=''){const name=document.getElementById('tplName').value.trim(),type=document.getElementById('tplType').value,content=document.getElementById('tplContent').value;if(!name)return toast('Informe o nome do template');if(!content.trim())return toast('Digite o conteúdo');const variables=[...new Set(content.match(/{{[^}]+}}/g)||[])];const payload={company_id:profile.company_id,name,type,content,variables,active:document.getElementById('tplActive').value==='true'};let error;if(id)({error}=await sb.from('document_templates').update(payload).eq('id',id));else({error}=await sb.from('document_templates').insert(payload));if(error)return toast('Erro: '+error.message);closeModal();toast(id?'Template atualizado':'Template criado');render()}
-async function duplicateDocTemplate(id){const x=docTemplateById(id);if(!x)return;const {error}=await sb.from('document_templates').insert({company_id:profile.company_id,name:x.name+' • Cópia',type:x.type,content:x.content,variables:x.variables||[],active:true});if(error)return toast('Erro: '+error.message);toast('Template duplicado');render()}
-async function toggleDocTemplate(id){const x=docTemplateById(id);if(!x)return;const {error}=await sb.from('document_templates').update({active:!x.active}).eq('id',id);if(error)return toast('Erro: '+error.message);toast('Status atualizado');render()}
-async function deleteDocTemplate(id){const x=docTemplateById(id);if(!x||!confirm(`Excluir o template "${x.name}"?`))return;const {error}=await sb.from('document_templates').delete().eq('id',id);if(error)return toast('Erro: '+error.message);toast('Template excluído');render()}
+async function saveDocTemplate(id=''){
+ const name=document.getElementById('tplName').value.trim(),type=document.getElementById('tplType').value,content=document.getElementById('tplContent').value;
+ if(!name)return toast('Informe o nome do template');if(!content.trim())return toast('Digite o conteúdo');
+ const variables=[...new Set(content.match(/{{[^}]+}}/g)||[])],payload={company_id:profile.company_id,name,type,content,variables,active:document.getElementById('tplActive').value==='true'};
+ let error;if(id)({error}=await sb.from('document_templates').update(payload).eq('id',id));else({error}=await sb.from('document_templates').insert(payload));
+ if(error)return toast('Erro: '+error.message);
+ await persistRefresh(id?'Template atualizado':'Template criado',{closeModal:true})
+}
+async function duplicateDocTemplate(id){
+ const x=docTemplateById(id);if(!x)return;
+ const {error}=await sb.from('document_templates').insert({company_id:profile.company_id,name:x.name+' • Cópia',type:x.type,content:x.content,variables:x.variables||[],active:true});
+ if(error)return toast('Erro: '+error.message);await persistRefresh('Template duplicado')
+}
+async function toggleDocTemplate(id){
+ const x=docTemplateById(id);if(!x)return;
+ const {error}=await sb.from('document_templates').update({active:!x.active}).eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Status atualizado')
+}
+async function deleteDocTemplate(id){
+ const x=docTemplateById(id);if(!x||!confirm(`Excluir o template "${x.name}"?`))return;
+ const {error}=await sb.from('document_templates').delete().eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Template excluído')
+}
 function templateClientOptions(){return cache.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}
 function templateProposalOptions(client=''){return cache.proposals.filter(p=>!client||p.client_id===client).map(p=>`<option value="${p.id}">${proposalNumber(p.number)} • ${esc(p.title)}</option>`).join('')}
 function templateContextForm(id){return `<div class="template-generate"><div class="notice"><b>Documento inteligente:</b> escolha cliente e proposta. O CRM preencherá automaticamente as variáveis do template.</div><div class="form-grid"><div class="field"><label>Cliente *</label><select id="docClient" onchange="refreshDocProposal()"><option value="">Selecione...</option>${templateClientOptions()}</select></div><div class="field"><label>Proposta / Projeto</label><select id="docProposal"><option value="">Sem proposta</option>${templateProposalOptions()}</select></div></div><div id="docLivePreview" class="document-preview-empty">Selecione os dados e clique em Visualizar Documento.</div><div class="client-quick"><button class="btn gold" onclick="previewGeneratedDocument('${id}')">Visualizar Documento</button><button class="btn" onclick="printGeneratedDocument('${id}')">Gerar PDF / Imprimir</button></div></div>`}
@@ -2293,7 +2259,12 @@ function generateDocTemplate(id){openModal('Gerar Documento',templateContextForm
 function previewGeneratedDocument(id){const r=templateResolve(id);if(!r)return toast('Selecione o cliente');document.getElementById('docLivePreview').innerHTML=docHtml(r)}
 function printGeneratedDocument(id){const r=templateResolve(id);if(!r)return toast('Selecione o cliente');const w=window.open('','_blank');w.document.write(`<html><head><title>${esc(r.t.name)}</title><style>body{font-family:Arial;margin:0;background:#eee}.paper{max-width:800px;margin:30px auto;background:white;padding:60px;color:#222;line-height:1.65}.brand{border-bottom:2px solid #c9973f;padding-bottom:18px;margin-bottom:30px;font-size:22px;font-weight:bold}.foot{border-top:1px solid #ddd;margin-top:40px;padding-top:15px;font-size:10px;color:#777}@media print{body{background:white}.paper{margin:0;box-shadow:none}}</style></head><body><div class="paper"><div class="brand">${esc(company?.name||'VIMAK Planejados')}</div>${esc(r.text).replaceAll('\n','<br>')}<div class="foot">Gerado em ${new Date().toLocaleString('pt-BR')} • VIMAK CRM</div></div><script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()}
 function viewDocTemplate(id){const x=docTemplateById(id);if(!x)return;openModal(x.name,`<div class="client-detail"><div class="client-hero"><div class="client-avatar">D</div><div><span class="badge ${x.active?'ok':''}">${x.active?'Ativo':'Inativo'}</span><h3>${esc(x.type)}</h3><p>${(x.variables||[]).length} variáveis inteligentes</p></div></div><div class="document-paper compact"><div class="document-body">${esc(x.content).replaceAll('\n','<br>')}</div></div><div class="client-quick"><button class="btn gold" onclick="closeModal();generateDocTemplate('${id}')">Gerar Documento</button><button class="btn" onclick="closeModal();editDocTemplate('${id}')">Editar</button><button class="btn" onclick="duplicateDocTemplate('${id}')">Duplicar</button></div></div>`,'')}
-function seedDocTemplates(){const defs=[['Contrato Padrão VIMAK','Contrato'],['Proposta Comercial Premium','Proposta Comercial'],['Termo de Aceite do Projeto','Termo de Aceite'],['Termo de Garantia','Garantia']];Promise.all(defs.map(([name,type])=>sb.from('document_templates').insert({company_id:profile.company_id,name,type,content:defaultTemplateContent(type),variables:[...new Set(defaultTemplateContent(type).match(/{{[^}]+}}/g)||[])],active:true}))).then(()=>{toast('Modelos profissionais criados');render()})}
+async function seedDocTemplates(){
+ const defs=[['Contrato Padrão VIMAK','Contrato'],['Proposta Comercial Premium','Proposta Comercial'],['Termo de Aceite do Projeto','Termo de Aceite'],['Termo de Garantia','Garantia']];
+ const results=await Promise.all(defs.map(([name,type])=>sb.from('document_templates').insert({company_id:profile.company_id,name,type,content:defaultTemplateContent(type),variables:[...new Set(defaultTemplateContent(type).match(/{{[^}]+}}/g)||[])],active:true})));
+ const bad=results.find(r=>r.error);if(bad?.error)return toast('Erro: '+bad.error.message);
+ await persistRefresh('Modelos profissionais criados')
+}
 function templates(){const ativos=cache.documentTemplates.filter(x=>x.active).length,tipos=new Set(cache.documentTemplates.map(x=>x.type)).size,vars=cache.documentTemplates.reduce((a,x)=>a+(x.variables||[]).length,0);const rows=cache.documentTemplates.map(x=>`<tr><td><button class="link-client" onclick="viewDocTemplate('${x.id}')"><b>${esc(x.name)}</b></button><small>${(x.variables||[]).length} variáveis</small></td><td>${esc(x.type)}</td><td><span class="badge ${x.active?'ok':''}">${x.active?'Ativo':'Inativo'}</span></td><td>${new Date(x.updated_at||x.created_at).toLocaleDateString('pt-BR')}</td><td><div class="row-actions"><button class="btn sm gold" onclick="generateDocTemplate('${x.id}')">Gerar PDF</button><button class="btn sm" onclick="editDocTemplate('${x.id}')">Editar</button><button class="btn sm" onclick="duplicateDocTemplate('${x.id}')">Duplicar</button><button class="btn sm" onclick="toggleDocTemplate('${x.id}')">${x.active?'Inativar':'Ativar'}</button><button class="btn sm danger" onclick="deleteDocTemplate('${x.id}')">Excluir</button></div></td></tr>`).join('');return shell('Documentos & Templates PRO','Contratos, propostas, termos e documentos inteligentes preenchidos automaticamente pelo CRM',`<button class="btn" onclick="seedDocTemplates()">+ Modelos VIMAK</button><button class="btn gold" onclick="addDocTemplate()">+ Novo Template</button>`,`<div class="document-hero"><div><span class="measurement-version">V6.11 • DOCUMENTOS PRO</span><h2>Do CRM para o documento, sem redigitar informações.</h2><p>Crie templates reutilizáveis e gere documentos personalizados usando dados reais de clientes e propostas.</p></div><button class="btn gold" onclick="addDocTemplate()">+ Criar Template</button></div><div class="grid g4 proposal-kpis"><div class="card kpi"><label>Templates</label><strong>${cache.documentTemplates.length}</strong></div><div class="card kpi"><label>Ativos</label><strong class="goldtxt">${ativos}</strong></div><div class="card kpi"><label>Tipos de documento</label><strong>${tipos}</strong></div><div class="card kpi"><label>Variáveis configuradas</label><strong>${vars}</strong></div></div><div class="document-type-cards">${[['▤','Contrato','Contratos personalizados'],['▧','Proposta Comercial','Apresentação comercial'],['✓','Termo de Aceite','Aprovação formal'],['◇','Garantia','Pós-venda profissional']].map(([i,t,d])=>`<button onclick="addDocTemplate()"><b>${i}</b><strong>${t}</strong><span>${d}</span></button>`).join('')}</div><div class="filters"><div class="field"><label>Buscar template</label><input placeholder="Nome, tipo, status..." oninput="filterTable(this.value)"></div></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Template</th><th>Tipo</th><th>Status</th><th>Atualizado</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td colspan="5" class="empty">Nenhum template. Use + Modelos VIMAK para começar com uma biblioteca profissional.</td></tr>`}</tbody></table></div></div>`)}
 const PROD_STAGES=["Orçado","Aprovado / Medição","Compras","Corte / Usinagem","Montagem Interna","Expedição","Em Montagem","Entregue"];
 const PROD_STAGE_PROGRESS={"Orçado":5,"Aprovado / Medição":15,"Compras":30,"Corte / Usinagem":50,"Montagem Interna":70,"Expedição":82,"Em Montagem":92,"Entregue":100};
@@ -2312,14 +2283,34 @@ function prodForm(x={}){return `<div class="production-editor"><div class="form-
 function prodStageAutoProgress(){const s=document.getElementById('prodStage')?.value,p=document.getElementById('prodProgress');if(p&&s)p.value=PROD_STAGE_PROGRESS[s]||0}
 function addProduction(){openModal('Nova Ordem de Produção',prodForm({stage:'Orçado',priority:'Normal',progress:5}),`saveProduction()`);modal.classList.add('proposal-modal')}
 function editProduction(id){const x=prodById(id);if(!x)return;openModal('Editar Ordem de Produção',prodForm(x),`saveProduction('${id}')`);modal.classList.add('proposal-modal')}
-async function saveProduction(id=''){const title=document.getElementById('prodTitle').value.trim(),client_id=document.getElementById('prodClient').value;if(!title)return toast('Informe o nome do projeto');if(!client_id)return toast('Selecione o cliente');const payload={company_id:profile.company_id,title,client_id,proposal_id:document.getElementById('prodProposal').value||null,stage:document.getElementById('prodStage').value,priority:document.getElementById('prodPriority').value,progress:Math.max(0,Math.min(100,Number(document.getElementById('prodProgress').value||0))),due_date:document.getElementById('prodDue').value||null,responsible_id:session.user.id,notes:document.getElementById('prodNotes').value.trim()||null};let error;if(id)({error}=await sb.from('production_projects').update(payload).eq('id',id));else({error}=await sb.from('production_projects').insert(payload));if(error)return toast('Erro: '+error.message);closeModal();toast(id?'Produção atualizada':'Ordem de produção criada');render()}
-async function deleteProduction(id){const x=prodById(id);if(!x||!confirm(`Excluir a ordem "${x.title}"?`))return;const {error}=await sb.from('production_projects').delete().eq('id',id);if(error)return toast('Erro: '+error.message);toast('Ordem excluída');render()}
-async function moveProduction(id,stage){const x=prodById(id);if(!x||x.stage===stage)return;const progress=Math.max(Number(x.progress||0),PROD_STAGE_PROGRESS[stage]||0);const {error}=await sb.from('production_projects').update({stage,progress:stage==='Entregue'?100:progress}).eq('id',id);if(error)return toast('Erro ao mover: '+error.message);toast(`Movido para ${stage}`);render()}
+async function saveProduction(id=''){
+ const title=document.getElementById('prodTitle').value.trim(),client_id=document.getElementById('prodClient').value;
+ if(!title)return toast('Informe o nome do projeto');if(!client_id)return toast('Selecione o cliente');
+ const payload={company_id:profile.company_id,title,client_id,proposal_id:document.getElementById('prodProposal').value||null,stage:document.getElementById('prodStage').value,priority:document.getElementById('prodPriority').value,progress:Math.max(0,Math.min(100,Number(document.getElementById('prodProgress').value||0))),due_date:document.getElementById('prodDue').value||null,responsible_id:session.user.id,notes:document.getElementById('prodNotes').value.trim()||null};
+ let error;if(id)({error}=await sb.from('production_projects').update(payload).eq('id',id));else({error}=await sb.from('production_projects').insert(payload));
+ if(error)return toast('Erro: '+error.message);await persistRefresh(id?'Produção atualizada':'Ordem de produção criada',{closeModal:true})
+}
+async function deleteProduction(id){
+ const x=prodById(id);if(!x||!confirm(`Excluir a ordem "${x.title}"?`))return;
+ const {error}=await sb.from('production_projects').delete().eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Ordem excluída')
+}
+async function moveProduction(id,stage){
+ const x=prodById(id);if(!x||x.stage===stage)return;
+ const progress=Math.max(Number(x.progress||0),PROD_STAGE_PROGRESS[stage]||0);
+ const {error}=await sb.from('production_projects').update({stage,progress:stage==='Entregue'?100:progress}).eq('id',id);if(error)return toast('Erro ao mover: '+error.message);
+ await persistRefresh(`Movido para ${stage}`)
+}
 function prodDragStart(e,id){e.dataTransfer.setData('text/plain',id);e.currentTarget.classList.add('dragging')}
 function prodDrop(e,stage){e.preventDefault();e.currentTarget.classList.remove('drag-over');const id=e.dataTransfer.getData('text/plain');moveProduction(id,stage)}
 function prodCard(x){const c=prodClient(x.client_id),p=prodProposal(x.proposal_id),days=prodDays(x),late=prodIsLate(x);return `<article class="production-card ${late?'late':''}" draggable="true" ondragstart="prodDragStart(event,'${x.id}')" ondragend="this.classList.remove('dragging')"><div class="production-card-top"><span class="badge ${prodPriorityClass(x.priority)}">${esc(x.priority||'Normal')}</span>${late?'<span class="production-late">ATRASADO</span>':''}</div><button class="production-card-title" onclick="viewProduction('${x.id}')">${esc(x.title)}</button><div class="production-client">${esc(c?.name||'Cliente')}<small>${esc(p?.title||'Sem proposta vinculada')}</small></div><div class="production-progress"><div><span>Progresso</span><b>${Number(x.progress||0)}%</b></div><div class="production-progress-bar"><i style="width:${Number(x.progress||0)}%"></i></div></div><div class="production-card-foot"><span>${x.due_date?(late?`⚠ ${Math.abs(days)}d atraso`:days===0?'Hoje':days>0?`${days}d restantes`:'Prazo'):'Sem prazo'}</span><button onclick="event.stopPropagation();editProduction('${x.id}')">•••</button></div></article>`}
 function viewProduction(id){const x=prodById(id);if(!x)return;const c=prodClient(x.client_id),p=prodProposal(x.proposal_id),m=cache.measurements.filter(z=>z.client_id===x.client_id),po=cache.purchaseOrders.filter(z=>z.proposal_id&&z.proposal_id===x.proposal_id);openModal('Ordem de Produção',`<div class="client-detail"><div class="production-detail-hero"><div><span class="badge ${prodStageClass(x.stage)}">${esc(x.stage)}</span><h2>${esc(x.title)}</h2><p>${esc(c?.name||'Cliente')} • ${esc(p?.title||'Sem proposta')}</p></div><div class="production-big-progress"><strong>${Number(x.progress||0)}%</strong><span>concluído</span></div></div><div class="detail-grid"><div><label>Prioridade</label><b>${esc(x.priority||'Normal')}</b></div><div><label>Prazo</label><b class="${prodIsLate(x)?'red':''}">${x.due_date?new Date(x.due_date+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</b></div><div><label>Medições do cliente</label><b>${m.length}</b></div><div><label>Pedidos vinculados</label><b>${po.length}</b></div></div><div class="production-timeline">${PROD_STAGES.map(st=>`<button class="${PROD_STAGES.indexOf(st)<=PROD_STAGES.indexOf(x.stage)?'done':''} ${st===x.stage?'current':''}" onclick="moveProduction('${id}','${st}');closeModal()"><i>✓</i><span>${st}</span></button>`).join('')}</div><div class="detail-notes"><label>Observações de produção</label><p>${esc(x.notes||'Nenhuma observação.')}</p></div><div class="client-quick"><button class="btn gold" onclick="closeModal();editProduction('${id}')">Editar Ordem</button><button class="btn" onclick="closeModal();location.hash='#/medicoes'">Abrir Medições</button><button class="btn" onclick="closeModal();location.hash='#/compras'">Abrir Compras</button></div></div>`,'')}
-async function createProductionFromProposal(id){const p=prodProposal(id);if(!p)return;const exists=cache.productionProjects.find(x=>x.proposal_id===id);if(exists)return viewProduction(exists.id);const c=prodClient(p.client_id);const payload={company_id:profile.company_id,proposal_id:p.id,client_id:p.client_id,title:p.title||`Projeto ${c?.name||''}`,stage:'Aprovado / Medição',progress:15,priority:'Normal',responsible_id:session.user.id,notes:'Ordem criada a partir da proposta '+proposalNumber(p.number)};const {error}=await sb.from('production_projects').insert(payload);if(error)return toast('Erro: '+error.message);toast('Ordem criada a partir da proposta');render()}
+async function createProductionFromProposal(id){
+ const p=prodProposal(id);if(!p)return;const exists=cache.productionProjects.find(x=>x.proposal_id===id);if(exists)return viewProduction(exists.id);
+ const c=prodClient(p.client_id),payload={company_id:profile.company_id,proposal_id:p.id,client_id:p.client_id,title:p.title||`Projeto ${c?.name||''}`,stage:'Aprovado / Medição',progress:15,priority:'Normal',responsible_id:session.user.id,notes:'Ordem criada a partir da proposta '+proposalNumber(p.number)};
+ const {error}=await sb.from('production_projects').insert(payload);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Ordem criada a partir da proposta')
+}
 function productionProposalImport(){const opts=cache.proposals.filter(p=>!cache.productionProjects.some(x=>x.proposal_id===p.id)).map(p=>`<option value="${p.id}">${proposalNumber(p.number)} • ${esc(p.title)} • ${esc(prodClient(p.client_id)?.name||'')}</option>`).join('');openModal('Enviar Proposta para Produção',`<div class="notice"><b>Integração comercial → fábrica:</b> escolha uma proposta e o CRM criará a Ordem de Produção já vinculada ao cliente.</div><div class="field" style="margin-top:12px"><label>Proposta</label><select id="prodImportProposal"><option value="">Selecione...</option>${opts}</select></div>`,`createProductionFromProposal(document.getElementById('prodImportProposal').value);closeModal()`)}
 function productionSetView(v){productionView=v;render()}
 function productionSetFilter(v){productionFilter=v;render()}
@@ -2342,7 +2333,13 @@ function ccParseFile(input){const f=input.files?.[0];if(!f)return;ccDraft.fileNa
 function ccPreview(){const b=document.getElementById('ccPreviewRows');if(!b)return;b.innerHTML=ccDraft.pieces.slice(0,100).map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(x.name)}</b></td><td>${x.w}</td><td>${x.h}</td><td>${x.t}</td><td>${esc(x.material)}</td><td>1</td></tr>`).join('')||'<tr><td colspan="7" class="empty">Importe uma lista para pré-visualizar.</td></tr>';const area=ccDraft.pieces.reduce((a,x)=>a+x.w*x.h/1e6,0);document.getElementById('ccPreviewStats')&&(document.getElementById('ccPreviewStats').innerHTML=`<span>Total: <b>${ccDraft.pieces.length}</b> peças</span><span>Área: <b>${area.toFixed(2)} m²</b></span>`)}
 function ccSimulate(){if(!ccDraft.pieces.length)return toast('Importe peças primeiro');cutDraft={pieces:ccDraft.pieces.map(x=>({...x,id:crypto.randomUUID(),source:ccDraft.source})),layouts:[],settings:{sheetW:+document.getElementById('ccSheetW').value||2750,sheetH:+document.getElementById('ccSheetH').value||1850,kerf:+document.getElementById('ccKerf').value||4,trim:+document.getElementById('ccTrim').value||2,minRemnantW:300,minRemnantH:300,grain:document.getElementById('ccGrain').checked},source:'Cortecloud'};openModal('Simulação SmartCut',`<div id="cutResultKpis" class="cut-result-kpis"></div><div id="cutPreview" class="cut-preview"></div>`,'');setTimeout(()=>{cutOptimize();renderCutPreview()},50)}
 function ccExportPayload(){if(!ccDraft.pieces.length)return toast('Importe peças primeiro');const rows=ccDraft.pieces.map(x=>[x.name,x.w,x.h,x.t,1,x.material,x.edge||'',x.grain?'':'S']);const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(';')).join('\n'),a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv'}));a.download=`cortecloud_${ccDraft.fileName||'lista_vimak'}.csv`;a.click();URL.revokeObjectURL(a.href);toast('Arquivo preparado para importação no Cortecloud')}
-async function ccSaveConfig(){const endpoint=document.getElementById('ccEndpoint').value.trim(),token=document.getElementById('ccToken').value.trim(),central=document.getElementById('ccCentral').value.trim(),existing=ccConfig(),config={endpoint,central,has_token:!!token,mode:'homologacao',updated_at:new Date().toISOString()};if(token)config.token=token;const payload={company_id:profile.company_id,name:'Cortecloud',type:'Cortecloud',status:token?'Configurado':'Pendente',config};let r=existing?await sb.from('integrations').update(payload).eq('id',existing.id):await sb.from('integrations').insert(payload);if(r.error)return toast('Erro: '+r.error.message);toast('Configuração Cortecloud salva');render()}
+async function ccSaveConfig(){
+ const endpoint=document.getElementById('ccEndpoint').value.trim(),token=document.getElementById('ccToken').value.trim(),central=document.getElementById('ccCentral').value.trim(),existing=ccConfig(),config={endpoint,central,has_token:!!token,mode:'homologacao',updated_at:new Date().toISOString()};
+ if(token)config.token=token;
+ const payload={company_id:profile.company_id,provider:'Cortecloud',status:token?'Configurado':'Pendente',config};
+ let r=existing?await sb.from('integrations').update(payload).eq('id',existing.id):await sb.from('integrations').insert(payload);
+ if(r.error)return toast('Erro: '+r.error.message);await persistRefresh('Configuração Cortecloud salva')
+}
 function ccHelp(){openModal('Integração Cortecloud • Como funciona',`<div class="client-detail"><div class="notice"><b>Modo seguro de interoperabilidade:</b> a V6.15 prepara, valida e exporta listas para o fluxo oficial de importação do Cortecloud.</div><div class="detail-notes"><h3>Fluxo homologado</h3><p>Promob pode gerar arquivo para Corte Certo/Cut Planning e o Cortecloud permite importar esse arquivo. Também existe importação por dados de Excel. Para integração direta via API, é necessário token de testes, desenvolvimento conforme manual e homologação do fornecedor.</p></div><div class="detail-notes"><h3>Segurança</h3><p>Não coloque token definitivo em repositório público. Para produção SaaS, o envio por API deve passar por backend/Edge Function, mantendo credenciais fora do navegador.</p></div></div>`,'')}
 function ccSend(){if(!ccDraft.pieces.length)return toast('Importe a lista primeiro');const cfg=ccConfig();if(!cfg||!ccData(cfg).token){ccExportPayload();return toast('Lista preparada. API direta requer token/homologação Cortecloud.')}toast('Conector configurado. Envio direto deve ser ativado via backend homologado; gerando arquivo seguro.');ccExportPayload()}
 function ccHistory(){const rows=ccRecords().map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('pt-BR')}</td><td>${esc(x.name||'Cortecloud')}</td><td><span class="badge ${x.status==='Conectado'||x.status==='Configurado'?'ok':'gold'}">${esc(x.status||'Pendente')}</span></td><td>${esc(ccData(x).central||'—')}</td></tr>`).join('');return `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Data</th><th>Integração</th><th>Status</th><th>Central</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="empty">Nenhuma configuração registrada.</td></tr>'}</tbody></table></div></div>`}
@@ -2353,8 +2350,18 @@ function cutEditor(x={}){const d=x.data||{},st=d.settings||cutDraft.settings;cut
 function cutLoadDemo(){cutDraft.pieces=[['Lateral Esq.',720,560],['Lateral Dir.',720,560],['Base',900,560],['Tampo',900,580],['Prateleira',864,540],['Porta 1',715,445],['Porta 2',715,445],['Travessa',864,120]].map(([name,w,h],i)=>({id:crypto.randomUUID(),name,w,h,t:15,material:'MDF Branco TX',grain:i>4,edge:'1mm',source:'Demo'}));refreshCutPieces();toast('Projeto exemplo carregado')}
 function addCutPlan(){cutDraft={pieces:[],layouts:[],settings:{sheetW:2750,sheetH:1850,kerf:4,trim:10,minRemnantW:300,minRemnantH:300,grain:true},source:'Manual'};openModal('Novo Plano de Corte PRO',cutEditor(),`saveCutPlan()`);modal.classList.add('cut-modal');setTimeout(()=>{refreshCutPieces();renderCutPreview()},0)}
 function editCutPlan(id){const x=cutById(id);if(!x)return;openModal('Editar Plano de Corte',cutEditor(x),`saveCutPlan('${id}')`);modal.classList.add('cut-modal');setTimeout(()=>{refreshCutPieces();renderCutPreview()},0)}
-async function saveCutPlan(id=''){cutSettingsFromForm();const name=document.getElementById('cutName')?.value.trim();if(!name)return toast('Informe o nome do plano');const sheets=cutDraft.layouts.length,area=cutDraft.layouts.reduce((a,x)=>a+x.w*x.h,0),used=cutDraft.layouts.reduce((a,x)=>a+(x.used||0),0),util=area?used/area*100:0;const data={version:'6.13',pieces:cutDraft.pieces,layouts:cutDraft.layouts,settings:cutDraft.settings,stats:{pieces:cutDraft.pieces.length,sheets,utilization:util,waste:100-util}};const payload={company_id:profile.company_id,production_project_id:document.getElementById('cutProject').value||null,name,source:document.getElementById('cutSource').value,status:document.getElementById('cutStatus').value,sheets_count:sheets,utilization_pct:util,waste_pct:100-util,data};let error;if(id)({error}=await sb.from('cutting_plans').update(payload).eq('id',id));else({error}=await sb.from('cutting_plans').insert(payload));if(error)return toast('Erro: '+error.message);closeModal();toast(id?'Plano atualizado':'Plano de corte salvo');render()}
-async function deleteCutPlan(id){const x=cutById(id);if(!x||!confirm(`Excluir o plano "${x.name}"?`))return;const {error}=await sb.from('cutting_plans').delete().eq('id',id);if(error)return toast('Erro: '+error.message);toast('Plano excluído');render()}
+async function saveCutPlan(id=''){
+ cutSettingsFromForm();const name=document.getElementById('cutName')?.value.trim();if(!name)return toast('Informe o nome do plano');
+ const sheets=cutDraft.layouts.length,area=cutDraft.layouts.reduce((a,x)=>a+x.w*x.h,0),used=cutDraft.layouts.reduce((a,x)=>a+(x.used||0),0),util=area?used/area*100:0,data={version:'6.13',pieces:cutDraft.pieces,layouts:cutDraft.layouts,settings:cutDraft.settings,stats:{pieces:cutDraft.pieces.length,sheets,utilization:util,waste:100-util}};
+ const payload={company_id:profile.company_id,production_project_id:document.getElementById('cutProject').value||null,name,source:document.getElementById('cutSource').value,status:document.getElementById('cutStatus').value,sheets_count:sheets,utilization_pct:util,waste_pct:100-util,data};
+ let error;if(id)({error}=await sb.from('cutting_plans').update(payload).eq('id',id));else({error}=await sb.from('cutting_plans').insert(payload));
+ if(error)return toast('Erro: '+error.message);await persistRefresh(id?'Plano atualizado':'Plano de corte salvo',{closeModal:true})
+}
+async function deleteCutPlan(id){
+ const x=cutById(id);if(!x||!confirm(`Excluir o plano "${x.name}"?`))return;
+ const {error}=await sb.from('cutting_plans').delete().eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Plano excluído')
+}
 function viewCutPlan(id){const x=cutById(id);if(!x)return;cutDraft={pieces:x.data?.pieces||[],layouts:x.data?.layouts||[],settings:x.data?.settings||{},source:x.source};openModal(x.name,`<div class="cut-view"><div class="cut-view-head"><div><span class="badge gold">${esc(x.source)}</span><h2>${esc(x.name)}</h2><p>${esc(cutProject(x.production_project_id)?.title||'Plano avulso')}</p></div><div><strong>${Number(x.utilization_pct||0).toFixed(1)}%</strong><span>aproveitamento</span></div></div><div id="cutResultKpis" class="cut-result-kpis"></div><div id="cutPreview" class="cut-preview"></div><div class="client-quick"><button class="btn gold" onclick="closeModal();editCutPlan('${id}')">Editar / Reotimizar</button><button class="btn" onclick="cutPrint()">Imprimir</button></div></div>`,'');modal.classList.add('cut-modal');setTimeout(renderCutPreview,0)}
 function cutCsvText(mode){let h;if(mode==='opencutlist')h=['Designation','Length','Width','Thickness','Quantity','Material','Tags'];else if(mode==='cortecerto')h=['DESCRICAO','COMPRIMENTO','LARGURA','ESPESSURA','QUANTIDADE','MATERIAL','FITA'];else if(mode==='cortecloud')h=['Descricao','Comprimento','Largura','Quantidade','Material','Espessura','Fita'];else h=['peca','material','comprimento_mm','largura_mm','espessura_mm','quantidade','veio','fita'];const rows=cutDraft.pieces.map(p=>mode==='opencutlist'?[p.name,p.w,p.h,p.t,1,p.material,p.grain?'grain':''] : mode==='cortecerto'?[p.name,p.w,p.h,p.t,1,p.material,p.edge||''] : mode==='cortecloud'?[p.name,p.w,p.h,1,p.material,p.t,p.edge||''] : [p.name,p.material,p.w,p.h,p.t,1,p.grain?'SIM':'NAO',p.edge||'']);return [h,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(';')).join('\n')}
 function cutExport(mode){if(!cutDraft.pieces.length)return toast('Não há peças para exportar');const names={generic:'universal',cortecerto:'corte_certo',cortecloud:'cortecloud',opencutlist:'opencutlist'};const blob=new Blob(['\ufeff'+cutCsvText(mode)],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`vimak_${names[mode]||mode}_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);toast('Arquivo de interoperabilidade gerado')}
@@ -2369,16 +2376,34 @@ function remStatusClass(s){return s==='Disponível'?'ok':s==='Reservada'?'gold':
 function remForm(x={}){return `<div class="rem-editor"><div class="form-grid"><div class="field"><label>Material *</label><input id="remMaterial" value="${esc(x.material||'')}" placeholder="Ex.: MDF Branco TX"></div><div class="field"><label>Espessura (mm)</label><input id="remThickness" type="number" step=".1" value="${Number(x.thickness_mm||15)}"></div><div class="field"><label>Comprimento (mm) *</label><input id="remW" type="number" value="${Number(x.width_mm||0)}"></div><div class="field"><label>Largura (mm) *</label><input id="remH" type="number" value="${Number(x.height_mm||0)}"></div><div class="field"><label>Sentido do veio</label><select id="remGrain"><option value="false" ${!x.grain?'selected':''}>Sem restrição</option><option value="true" ${x.grain?'selected':''}>Com veio</option></select></div><div class="field"><label>Status</label><select id="remStatus">${['Disponível','Reservada','Consumida','Descartada'].map(v=>`<option ${x.status===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label>Rua / Localização</label><input id="remLocation" value="${esc(x.location||'')}" placeholder="Ex.: Rack A • Nível 2"></div><div class="field"><label>Origem</label><input id="remOrigin" value="${esc(x.origin||'Plano de Corte VIMAK')}" placeholder="Projeto / chapa"></div><div class="field full"><label>Observações</label><textarea id="remNotes" rows="4">${esc(x.notes||'')}</textarea></div></div><div class="rem-rule"><b>Regra Zero Desperdício</b><span>Cadastre a dimensão retangular realmente utilizável da sobra. Defeitos e recortes irregulares devem ser descontados.</span></div></div>`}
 function addRemnant(){openModal('Cadastrar Sobra de MDF',remForm({status:'Disponível',thickness_mm:15}),`saveRemnant()`)}
 function editRemnant(id){const x=remById(id);if(x)openModal('Editar Sobra',remForm(x),`saveRemnant('${id}')`)}
-async function saveRemnant(id=''){const material=document.getElementById('remMaterial').value.trim(),width_mm=+document.getElementById('remW').value,height_mm=+document.getElementById('remH').value;if(!material||width_mm<=0||height_mm<=0)return toast('Preencha material e dimensões válidas');const payload={company_id:profile.company_id,material,thickness_mm:+document.getElementById('remThickness').value||15,width_mm,height_mm,area_m2:width_mm*height_mm/1e6,grain:document.getElementById('remGrain').value==='true',status:document.getElementById('remStatus').value,location:document.getElementById('remLocation').value.trim()||null,origin:document.getElementById('remOrigin').value.trim()||null,notes:document.getElementById('remNotes').value.trim()||null};if(!id)payload.label_code='SOB-'+Date.now().toString(36).toUpperCase();const r=id?await sb.from('sheet_remnants').update(payload).eq('id',id):await sb.from('sheet_remnants').insert(payload);if(r.error)return toast('Erro: '+r.error.message);closeModal();toast('Sobra salva');render()}
-async function remSetStatus(id,status){const {error}=await sb.from('sheet_remnants').update({status}).eq('id',id);if(error)return toast('Erro: '+error.message);toast('Status atualizado');render()}
-async function deleteRemnant(id){if(!confirm('Excluir esta sobra?'))return;const {error}=await sb.from('sheet_remnants').delete().eq('id',id);if(error)return toast('Erro: '+error.message);toast('Sobra excluída');render()}
+async function saveRemnant(id=''){
+ const material=document.getElementById('remMaterial').value.trim(),width_mm=+document.getElementById('remW').value,height_mm=+document.getElementById('remH').value;
+ if(!material||width_mm<=0||height_mm<=0)return toast('Preencha material e dimensões válidas');
+ const payload={company_id:profile.company_id,material,thickness_mm:+document.getElementById('remThickness').value||15,width_mm,height_mm,area_m2:width_mm*height_mm/1e6,status:document.getElementById('remStatus').value,storage_location:document.getElementById('remLocation').value.trim()||null,origin:document.getElementById('remOrigin').value.trim()||null};
+ if(!id)payload.label='SOB-'+Date.now().toString(36).toUpperCase();
+ const r=id?await sb.from('sheet_remnants').update(payload).eq('id',id):await sb.from('sheet_remnants').insert(payload);
+ if(r.error)return toast('Erro: '+r.error.message);await persistRefresh('Sobra salva',{closeModal:true})
+}
+async function remSetStatus(id,status){
+ const {error}=await sb.from('sheet_remnants').update({status}).eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Status atualizado')
+}
+async function deleteRemnant(id){
+ if(!confirm('Excluir esta sobra?'))return;
+ const {error}=await sb.from('sheet_remnants').delete().eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Sobra excluída')
+}
 function remFiltered(){return cache.sheetRemnants.filter(x=>{const q=remnantSearch.toLowerCase(),okq=!q||[remCode(x),x.material,x.location,x.origin,x.status].some(v=>String(v||'').toLowerCase().includes(q));const okf=remnantFilter==='todos'||(remnantFilter==='disponivel'&&x.status==='Disponível')||(remnantFilter==='grandes'&&remArea(x)>=1&&x.status==='Disponível')||(remnantFilter==='pequenas'&&remArea(x)<1&&x.status==='Disponível')||x.status===remnantFilter;return okq&&okf})}
 function remSetFilter(v){remnantFilter=v;render()} function remSetSearch(v){remnantSearch=v;render()}
 function remCanFit(p,r){const normal=p.w<=r.width_mm&&p.h<=r.height_mm,rot=(!p.grain)&&p.h<=r.width_mm&&p.w<=r.height_mm;return normal||rot}
 function remFindForPiece(p){return cache.sheetRemnants.filter(remUsable).filter(r=>String(r.material||'').toLowerCase()===String(p.material||'').toLowerCase()&&Math.abs(Number(r.thickness_mm||0)-Number(p.t||0))<.2&&remCanFit(p,r)).sort((a,b)=>(a.width_mm*a.height_mm-p.w*p.h)-(b.width_mm*b.height_mm-p.w*p.h))}
 function remSmartAudit(){const plans=cache.cuttingPlans.filter(x=>x.data?.pieces?.length),matches=plans.flatMap(plan=>(plan.data.pieces||[]).map(piece=>({plan,piece,rs:remFindForPiece(piece)}))).filter(x=>x.rs.length);openModal('Motor Zero Waste • Compatibilidades',`<div class="rem-ai-hero"><b>${matches.length}</b><span>peças podem potencialmente ser produzidas usando sobras cadastradas</span></div><div class="table-wrap"><table class="table"><thead><tr><th>Peça</th><th>Plano</th><th>Material</th><th>Medida</th><th>Melhor sobra</th><th>Dimensão</th><th></th></tr></thead><tbody>${matches.slice(0,100).map(({plan,piece,rs})=>{const r=rs[0];return `<tr><td><b>${esc(piece.name)}</b></td><td>${esc(plan.name)}</td><td>${esc(piece.material)}</td><td>${piece.w}×${piece.h}</td><td><b class="goldtxt">${remCode(r)}</b></td><td>${r.width_mm}×${r.height_mm}</td><td><button class="btn sm gold" onclick="remSetStatus('${r.id}','Reservada');closeModal()">Reservar</button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhuma compatibilidade encontrada.</td></tr>'}</tbody></table></div><div class="rem-ai-note">Compatibilidade por material, espessura e geometria. Confirme fisicamente veio, defeitos e acabamento antes do corte.</div>`,'');modal.classList.add('proposal-modal')}
 function remImportFromCutPlans(){let cand=[];cache.cuttingPlans.forEach(plan=>(plan.data?.layouts||[]).forEach((sh,si)=>(sh.remnants||[]).forEach(r=>{const [material,t]=String(sh.key||'MDF|15').split('|');if(r.w>=300&&r.h>=300)cand.push({plan_id:plan.id,plan_name:plan.name,material,thickness:+t||15,w:Math.round(r.w),h:Math.round(r.h),si})})));if(!cand.length)return toast('Nenhuma sobra útil encontrada nos planos otimizados');window._remCand=cand;openModal('Importar Sobras do SmartCut',`<div class="notice"><b>${cand.length} sobras potenciais encontradas.</b> Marque apenas as que foram realmente separadas e guardadas.</div><div class="rem-import-list">${cand.map((r,i)=>`<label><input type="checkbox" class="remImportCheck" data-i="${i}" checked><div><b>${esc(r.material)} • ${r.w}×${r.h}×${r.thickness} mm</b><span>${esc(r.plan_name)} • Chapa ${r.si+1}</span></div><strong>${(r.w*r.h/1e6).toFixed(2)} m²</strong></label>`).join('')}</div><button class="btn gold" onclick="remCommitImports()">Cadastrar selecionadas</button>`,'');modal.classList.add('proposal-modal')}
-async function remCommitImports(){const c=window._remCand||[],ids=[...document.querySelectorAll('.remImportCheck:checked')].map(x=>+x.dataset.i),stamp=Date.now().toString(36).toUpperCase(),rows=ids.map((i,n)=>{const r=c[i];return {company_id:profile.company_id,label_code:`SOB-${stamp}-${n+1}`,material:r.material,thickness_mm:r.thickness,width_mm:r.w,height_mm:r.h,area_m2:r.w*r.h/1e6,status:'Disponível',grain:false,origin:`Plano ${r.plan_name} • Chapa ${r.si+1}`,notes:'Importada do SmartCut VIMAK'}});if(!rows.length)return toast('Selecione sobras');const {error}=await sb.from('sheet_remnants').insert(rows);if(error)return toast('Erro: '+error.message);closeModal();toast(`${rows.length} sobras cadastradas`);render()}
+async function remCommitImports(){
+ const c=window._remCand||[],ids=[...document.querySelectorAll('.remImportCheck:checked')].map(x=>+x.dataset.i),stamp=Date.now().toString(36).toUpperCase(),rows=ids.map((i,n)=>{const r=c[i];return {company_id:profile.company_id,label:`SOB-${stamp}-${n+1}`,material:r.material,thickness_mm:r.thickness,width_mm:r.w,height_mm:r.h,area_m2:r.w*r.h/1e6,status:'Disponível',origin:`Plano ${r.plan_name} • Chapa ${r.si+1}`}});if(!rows.length)return toast('Selecione sobras');
+ const {error}=await sb.from('sheet_remnants').insert(rows);if(error)return toast('Erro: '+error.message);
+ await persistRefresh(`${rows.length} sobras cadastradas`,{closeModal:true})
+}
 function remLabelHtml(x){return `<div class="rem-label"><div class="rem-label-brand">VIMAK <span>ZERO WASTE</span></div><div class="rem-label-code">${remCode(x)}</div><b>${esc(x.material)}</b><strong>${x.width_mm} × ${x.height_mm} × ${Number(x.thickness_mm||0)} mm</strong><div>${remArea(x).toFixed(3)} m² • ${esc(x.location||'Sem localização')}</div><div class="rem-label-bars">|||| ||| ||||| || ||||</div></div>`}
 function printRemLabel(id){const x=remById(id);if(!x)return;const w=window.open('','_blank');w.document.write(`<html><head><title>${remCode(x)}</title><style>body{font-family:Arial}.l{width:82mm;border:2px solid;padding:7mm}.b{font-size:22px;font-weight:900}.c{font-family:monospace;margin:8px 0}.bars{font-size:22px;letter-spacing:3px;margin-top:10px}</style></head><body><div class="l"><div class="b">VIMAK • ZERO WASTE</div><div class="c">${remCode(x)}</div><b>${esc(x.material)}</b><h3>${x.width_mm} × ${x.height_mm} × ${x.thickness_mm} mm</h3><div>${remArea(x).toFixed(3)} m² • ${esc(x.location||'')}</div><div class="bars">|||| ||| ||||| || ||||</div></div><script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()}
 function viewRemnant(id){const x=remById(id);if(!x)return;openModal(remCode(x),`<div class="rem-view-hero">${remLabelHtml(x)}<div><span class="badge ${remStatusClass(x.status)}">${esc(x.status)}</span><h2>${esc(x.material)}</h2><strong>${x.width_mm} × ${x.height_mm} × ${x.thickness_mm} mm</strong><p>${remArea(x).toFixed(3)} m²</p><div class="client-quick"><button class="btn gold" onclick="printRemLabel('${id}')">Imprimir Etiqueta</button><button class="btn" onclick="closeModal();editRemnant('${id}')">Editar</button>${x.status==='Disponível'?`<button class="btn" onclick="remSetStatus('${id}','Reservada');closeModal()">Reservar</button>`:''}${x.status==='Reservada'?`<button class="btn" onclick="remSetStatus('${id}','Disponível');closeModal()">Liberar</button>`:''}</div></div></div>`,'')}
@@ -2438,9 +2463,21 @@ function teamRenderMembers(){const b=document.getElementById('teamMembers');if(!
 function teamAddMember(){teamMemberDraft.push({name:'',role:'Montador',phone:'',skills:''});teamRenderMembers()}
 function addTeam(){teamMemberDraft=[];openModal('Equipe de Montagem PRO',teamForm({active:true}),`saveTeam()`);modal.classList.add('proposal-modal');setTimeout(teamRenderMembers,0)}
 function editTeam(id){const x=teamById(id);if(!x)return;teamMemberDraft=[...(teamMeta(x).members||[])];openModal('Editar Equipe',teamForm(x),`saveTeam('${id}')`);modal.classList.add('proposal-modal');setTimeout(teamRenderMembers,0)}
-async function saveTeam(id=''){const name=document.getElementById('teamName').value.trim(),responsible=document.getElementById('teamResponsible').value.trim();if(!name||!responsible)return toast('Informe nome da equipe e responsável');const metadata={status:document.getElementById('teamStatus').value,capacity:+document.getElementById('teamCapacity').value||1,daily_cost:+document.getElementById('teamDailyCost').value||0,vehicle:document.getElementById('teamVehicle').value.trim(),region:document.getElementById('teamRegion').value.trim(),skills:document.getElementById('teamSkills').value.split(',').map(x=>x.trim()).filter(Boolean),rating:+document.getElementById('teamRating').value||0,quality_target:+document.getElementById('teamQualityTarget').value||95,notes:document.getElementById('teamNotes').value.trim(),members:teamMemberDraft.filter(x=>x.name.trim()),ppe_check:document.getElementById('teamPpe').checked,tools_check:document.getElementById('teamTools').checked,vehicle_check:document.getElementById('teamVehicleCheck').checked};const payload={company_id:profile.company_id,name,responsible,phone:document.getElementById('teamPhone').value.trim()||null,active:true,metadata};let r=id?await sb.from('installation_teams').update(payload).eq('id',id):await sb.from('installation_teams').insert(payload);if(r.error)return toast('Erro: '+r.error.message);closeModal();toast(id?'Equipe atualizada':'Equipe criada');render()}
-async function teamToggle(id){const x=teamById(id);if(!x)return;const {error}=await sb.from('installation_teams').update({active:!x.active}).eq('id',id);if(error)return toast('Erro: '+error.message);toast(x.active?'Equipe inativada':'Equipe reativada');render()}
-async function deleteTeam(id){const x=teamById(id);if(!x||!confirm(`Excluir a equipe "${x.name}"?`))return;const {error}=await sb.from('installation_teams').delete().eq('id',id);if(error)return toast('Erro: '+error.message);toast('Equipe excluída');render()}
+async function saveTeam(id=''){
+ const name=document.getElementById('teamName').value.trim(),responsible=document.getElementById('teamResponsible').value.trim();if(!name||!responsible)return toast('Informe nome da equipe e responsável');
+ const metadata={status:document.getElementById('teamStatus').value,capacity:+document.getElementById('teamCapacity').value||1,daily_cost:+document.getElementById('teamDailyCost').value||0,vehicle:document.getElementById('teamVehicle').value.trim(),region:document.getElementById('teamRegion').value.trim(),skills:document.getElementById('teamSkills').value.split(',').map(x=>x.trim()).filter(Boolean),rating:+document.getElementById('teamRating').value||0,quality_target:+document.getElementById('teamQualityTarget').value||95,notes:document.getElementById('teamNotes').value.trim(),members:teamMemberDraft.filter(x=>x.name.trim()),ppe_check:document.getElementById('teamPpe').checked,tools_check:document.getElementById('teamTools').checked,vehicle_check:document.getElementById('teamVehicleCheck').checked};
+ const payload={company_id:profile.company_id,name,responsible,phone:document.getElementById('teamPhone').value.trim()||null,active:true,metadata};
+ let r=id?await sb.from('installation_teams').update(payload).eq('id',id):await sb.from('installation_teams').insert(payload);if(r.error)return toast('Erro: '+r.error.message);
+ await persistRefresh(id?'Equipe atualizada':'Equipe criada',{closeModal:true})
+}
+async function teamToggle(id){
+ const x=teamById(id);if(!x)return;const {error}=await sb.from('installation_teams').update({active:!x.active}).eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh(x.active?'Equipe inativada':'Equipe reativada')
+}
+async function deleteTeam(id){
+ const x=teamById(id);if(!x||!confirm(`Excluir a equipe "${x.name}"?`))return;const {error}=await sb.from('installation_teams').delete().eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Equipe excluída')
+}
 function teamFiltered(){return cache.installationTeams.filter(x=>{const m=teamMeta(x),q=teamSearch.toLowerCase(),okq=!q||[x.name,x.responsible,x.phone,m.region,(m.skills||[]).join(' ')].some(v=>String(v||'').toLowerCase().includes(q)),okf=teamFilter==='todas'||(teamFilter==='ativas'&&x.active!==false)||(teamFilter==='disponiveis'&&teamStatus(x)==='Disponível')||(teamFilter==='ocupadas'&&teamStatus(x)==='Em montagem')||(teamFilter==='inativas'&&x.active===false);return okq&&okf})}
 function teamSetFilter(v){teamFilter=v;render()} function teamSetSearch(v){teamSearch=v;render()}
 function teamNextJob(id){return teamJobs(id).filter(j=>new Date(j.starts_at)>=new Date()&&!['Cancelado'].includes(j.status)).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at))[0]}
@@ -2500,9 +2537,23 @@ function agForm(x={}){const m=agMeta(x),start=x.starts_at?new Date(x.starts_at):
 function agCheckAvailability(){const team=document.getElementById('agTeam')?.value,start=document.getElementById('agStart')?.value,end=document.getElementById('agEnd')?.value,b=document.getElementById('agAvailability');if(!b||!start||!end)return;const conf=team?agConflicts(team,start,end,window._agEditing||''):[],suggest=agSuggestTeams(start,end).slice(0,3);b.innerHTML=conf.length?`<div class="ag-conflict"><b>⚠ Conflito de agenda</b><span>Esta equipe já possui ${conf.length} montagem(ns) neste período.</span></div><div class="ag-suggestions">${suggest.map(x=>`<button type="button" onclick="document.getElementById('agTeam').value='${x.t.id}';agCheckAvailability()"><b>${esc(x.t.name)}</b><span>${x.conf?'Ocupada':'Livre'} • ${x.score.toFixed(1)}★ • ${x.util}% carga</span></button>`).join('')}</div>`:`<div class="ag-free"><b>✓ Janela disponível</b><span>${team?'Equipe sem conflito neste período.':'Escolha uma equipe para validar conflitos.'}</span></div>`}
 function addAgenda(){window._agEditing='';openModal('Agendar Montagem',agForm({status:'Agendado'}),`saveAgenda()`);modal.classList.add('proposal-modal');setTimeout(agCheckAvailability,0)}
 function editAgenda(id){const x=agById(id);if(!x)return;window._agEditing=id;openModal('Editar Agendamento',agForm(x),`saveAgenda('${id}')`);modal.classList.add('proposal-modal');setTimeout(agCheckAvailability,0)}
-async function saveAgenda(id=''){const client_id=document.getElementById('agClient').value,team_id=document.getElementById('agTeam').value,starts_at=document.getElementById('agStart').value,ends_at=document.getElementById('agEnd').value,job_address=document.getElementById('agAddress').value.trim();if(!client_id||!team_id||!starts_at||!ends_at||!job_address)return toast('Preencha cliente, equipe, período e endereço');if(new Date(ends_at)<=new Date(starts_at))return toast('O fim precisa ser posterior ao início');const conf=agConflicts(team_id,starts_at,ends_at,id);if(conf.length&&!confirm(`Há ${conf.length} conflito(s) para esta equipe. Deseja salvar mesmo assim?`))return;const metadata={environment:document.getElementById('agEnvironment').value.trim(),city:document.getElementById('agCity').value.trim(),contact:document.getElementById('agContact').value.trim(),phone:document.getElementById('agPhone').value.trim(),volumes:+document.getElementById('agVolumes').value||0,days:+document.getElementById('agDays').value||1,notes:document.getElementById('agNotes').value.trim(),measure_ok:document.getElementById('agMeasureOk').checked,production_ok:document.getElementById('agProductionOk').checked,hardware_ok:document.getElementById('agHardwareOk').checked,client_ok:document.getElementById('agClientOk').checked};const payload={company_id:profile.company_id,client_id,proposal_id:document.getElementById('agProposal').value||null,team_id,job_address,starts_at:new Date(starts_at).toISOString(),ends_at:new Date(ends_at).toISOString(),status:document.getElementById('agStatus').value,notes:metadata.notes||null,metadata};let r=id?await sb.from('installation_schedule').update(payload).eq('id',id):await sb.from('installation_schedule').insert(payload);if(r.error)return toast('Erro: '+r.error.message);closeModal();toast(id?'Agendamento atualizado':'Montagem agendada');render()}
-async function agSetStatus(id,status){const {error}=await sb.from('installation_schedule').update({status}).eq('id',id);if(error)return toast('Erro: '+error.message);toast('Status atualizado');render()}
-async function deleteAgenda(id){if(!confirm('Excluir este agendamento?'))return;const {error}=await sb.from('installation_schedule').delete().eq('id',id);if(error)return toast('Erro: '+error.message);toast('Agendamento excluído');render()}
+async function saveAgenda(id=''){
+ const client_id=document.getElementById('agClient').value,team_id=document.getElementById('agTeam').value,starts_at=document.getElementById('agStart').value,ends_at=document.getElementById('agEnd').value,job_address=document.getElementById('agAddress').value.trim();
+ if(!client_id||!team_id||!starts_at||!ends_at||!job_address)return toast('Preencha cliente, equipe, período e endereço');if(new Date(ends_at)<=new Date(starts_at))return toast('O fim precisa ser posterior ao início');
+ const conf=agConflicts(team_id,starts_at,ends_at,id);if(conf.length&&!confirm(`Há ${conf.length} conflito(s) para esta equipe. Deseja salvar mesmo assim?`))return;
+ const metadata={environment:document.getElementById('agEnvironment').value.trim(),city:document.getElementById('agCity').value.trim(),contact:document.getElementById('agContact').value.trim(),phone:document.getElementById('agPhone').value.trim(),volumes:+document.getElementById('agVolumes').value||0,days:+document.getElementById('agDays').value||1,notes:document.getElementById('agNotes').value.trim(),measure_ok:document.getElementById('agMeasureOk').checked,production_ok:document.getElementById('agProductionOk').checked,hardware_ok:document.getElementById('agHardwareOk').checked,client_ok:document.getElementById('agClientOk').checked};
+ const payload={company_id:profile.company_id,client_id,proposal_id:document.getElementById('agProposal').value||null,team_id,job_address,starts_at:new Date(starts_at).toISOString(),ends_at:new Date(ends_at).toISOString(),status:document.getElementById('agStatus').value,notes:metadata.notes||null,metadata};
+ let r=id?await sb.from('installation_schedule').update(payload).eq('id',id):await sb.from('installation_schedule').insert(payload);if(r.error)return toast('Erro: '+r.error.message);
+ await persistRefresh(id?'Agendamento atualizado':'Montagem agendada',{closeModal:true})
+}
+async function agSetStatus(id,status){
+ const {error}=await sb.from('installation_schedule').update({status}).eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Status atualizado')
+}
+async function deleteAgenda(id){
+ if(!confirm('Excluir este agendamento?'))return;const {error}=await sb.from('installation_schedule').delete().eq('id',id);if(error)return toast('Erro: '+error.message);
+ await persistRefresh('Agendamento excluído')
+}
 function agView(id){const x=agById(id);if(!x)return;const c=agClient(x.client_id),t=agTeam(x.team_id),m=agMeta(x),checks=[['Medição',m.measure_ok],['Produção',m.production_ok],['Ferragens',m.hardware_ok],['Cliente',m.client_ok]];openModal('Ordem de Montagem',`<div class="ag-detail"><div class="ag-detail-hero"><div><span class="badge ${agStatusClass(x.status)}">${esc(x.status||'Agendado')}</span><h2>${esc(c?.name||'Cliente')}</h2><p>${agFmtDate(x.starts_at)} • ${agFmtTime(x.starts_at)}–${agFmtTime(x.ends_at)}</p></div><div class="ag-team-pill"><span>Equipe</span><b>${esc(t?.name||'—')}</b><small>${esc(t?.responsible||'')}</small></div></div><div class="ag-detail-grid"><div><label>Endereço</label><b>${esc(x.job_address||'—')}</b></div><div><label>Ambientes</label><b>${esc(m.environment||'—')}</b></div><div><label>Contato</label><b>${esc(m.contact||'—')}</b></div><div><label>Volumes</label><b>${Number(m.volumes||0)}</b></div></div><div class="ag-progress-checks">${checks.map(v=>`<div class="${v[1]?'done':''}"><b>${v[1]?'✓':'○'}</b><span>${v[0]}</span></div>`).join('')}</div><div class="detail-notes"><h3>Instruções</h3><p>${esc(m.notes||x.notes||'Sem observações.')}</p></div><div class="client-quick"><button class="btn gold" onclick="agSetStatus('${id}','Em andamento');closeModal()">Iniciar Montagem</button><button class="btn" onclick="agSetStatus('${id}','Concluído');closeModal()">✓ Concluir</button><button class="btn" onclick="closeModal();editAgenda('${id}')">Editar</button><button class="btn danger" onclick="deleteAgenda('${id}');closeModal()">Excluir</button></div></div>`,'');modal.classList.add('proposal-modal')}
 function agRange(){if(agendaView==='mes'){let a=new Date(agendaAnchor.getFullYear(),agendaAnchor.getMonth(),1),b=new Date(agendaAnchor.getFullYear(),agendaAnchor.getMonth()+1,0);return[a,b]}if(agendaView==='dia'){let a=agDay(agendaAnchor);return[a,a]}let a=agMonday(agendaAnchor);return[a,agAddDays(a,6)]}
 function agWeek(){const start=agMonday(agendaAnchor),days=[0,1,2,3,4,5,6].map(n=>agAddDays(start,n)),items=agFiltered();return `<div class="ag-week"><div class="ag-time-head"></div>${days.map(d=>`<div class="ag-day-head ${agISODate(d)===agISODate(new Date())?'today':''}"><span>${d.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','')}</span><b>${d.getDate()}</b></div>`).join('')}${Array.from({length:12},(_,i)=>i+7).map(h=>`<div class="ag-hour">${String(h).padStart(2,'0')}:00</div>${days.map(d=>{const ev=items.filter(x=>agISODate(new Date(x.starts_at))===agISODate(d)&&new Date(x.starts_at).getHours()===h);return `<div class="ag-slot">${ev.map(x=>{const t=agTeam(x.team_id),c=agClient(x.client_id);return `<button class="ag-event ${agStatusClass(x.status)}" onclick="agView('${x.id}')"><b>${agFmtTime(x.starts_at)} ${esc(c?.name||'Cliente')}</b><span>${esc(t?.name||'Equipe')}</span></button>`}).join('')}</div>`}).join('')}`).join('')}</div>`}
@@ -2686,7 +2737,11 @@ async function finSettle(type,id){
 function finTreasury(){let forecast=finCashForecast();return `<div class="fin-treasury"><section class="card"><div class="fin-panel-head"><div><span>TREASURY</span><h3>Posição bancária</h3></div><b>${money(finBalance())}</b></div><div class="fin-bank-grid">${cache.bankAccounts.map(x=>`<div><span>${esc(x.bank_name||x.bank||'Banco')}</span><b>${esc(x.name||x.account_name||'Conta')}</b><strong>${money(x.balance||x.current_balance)}</strong><small>${esc(x.currency||'BRL')}</small></div>`).join('')||'<div class="empty">Cadastre contas bancárias para consolidar tesouraria.</div>'}</div></section><section class="card"><div class="fin-panel-head"><div><span>LIQUIDITY FORECAST</span><h3>Horizonte de caixa</h3></div></div><div class="fin-horizon">${forecast.map(x=>`<div><b>D+${x.d}</b><strong class="${x.b<0?'red':'green'}">${money(x.b)}</strong><span>Entradas ${money(x.r)}</span><span>Saídas ${money(x.p)}</span></div>`).join('')}</div></section></div>`}
 function finDRE(){let s=finSeries(),rev=s.reduce((a,x)=>a+x.rec,0),exp=s.reduce((a,x)=>a+x.pay,0),ebitda=rev-exp,margin=rev?ebitda/rev*100:0;return `<div class="fin-statement"><div class="fin-statement-title"><span>MANAGEMENT P&L</span><h2>DRE Gerencial • últimos 12 meses</h2></div>${[['Receita operacional',rev,'rev'],['(-) Custos e despesas',-exp,'cost'],['EBITDA / Resultado operacional',ebitda,'total'],['Margem operacional',margin,'pct']].map(x=>`<div class="${x[2]}"><b>${x[0]}</b><strong>${x[2]==='pct'?x[1].toFixed(1)+'%':money(x[1])}</strong></div>`).join('')}<div class="notice">DRE gerencial baseada nos títulos de receber/pagar disponíveis. Para contabilidade societária completa, plano de contas, competência, impostos e lançamentos contábeis devem ser classificados formalmente.</div></div>`}
 function finBudget(){let y=new Date().getFullYear(),bud=cache.financeBudgets.find(x=>Number(x.year)===y),items=bud?cache.financeBudgetItems.filter(x=>x.budget_id===bud.id):[],planned=items.reduce((a,x)=>a+finNum(x.planned_amount),0),actual=items.reduce((a,x)=>a+finNum(x.actual_amount),0);return `<div class="card"><div class="fin-panel-head"><div><span>FP&A • BUDGET & FORECAST</span><h3>Planejamento ${y}</h3></div><button class="btn gold" onclick="finCreateBudget()">+ Budget ${y}</button></div><div class="fin-budget-kpis"><div><span>Planejado</span><b>${money(planned)}</b></div><div><span>Realizado</span><b>${money(actual)}</b></div><div><span>Variação</span><b class="${actual>planned?'red':'green'}">${money(planned-actual)}</b></div><div><span>Execução</span><b>${planned?(actual/planned*100).toFixed(1):'0.0'}%</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Centro / Conta</th><th>Mês</th><th>Planejado</th><th>Realizado</th><th>Variação</th></tr></thead><tbody>${items.map(x=>`<tr><td>${esc(x.category||'Geral')}</td><td>${x.month||'—'}</td><td>${money(x.planned_amount)}</td><td>${money(x.actual_amount)}</td><td>${money(finNum(x.planned_amount)-finNum(x.actual_amount))}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">Crie o budget e importe/cadastre metas financeiras.</td></tr>'}</tbody></table></div></div>`}
-async function finCreateBudget(){let y=new Date().getFullYear();if(cache.financeBudgets.some(x=>Number(x.year)===y))return toast('Budget do ano já existe');let r=await sb.from('finance_budgets').insert({company_id:profile.company_id,name:`Budget ${y}`,year:y,status:'Rascunho',currency:'BRL'});if(r.error)return toast('Erro: '+r.error.message);toast('Budget criado');render()}
+async function finCreateBudget(){
+ let y=new Date().getFullYear();if(cache.financeBudgets.some(x=>Number(x.year)===y))return toast('Budget do ano já existe');
+ let r=await sb.from('finance_budgets').insert({company_id:profile.company_id,name:`Budget ${y}`,year:y,status:'Rascunho',currency:'BRL'});if(r.error)return toast('Erro: '+r.error.message);
+ await persistRefresh('Budget criado')
+}
 function finGovernance(){let pending=cache.financeApprovals.filter(x=>x.status==='Pendente'),entities=cache.financeEntities;return `<div class="fin-row3"><section class="card"><div class="fin-panel-head"><div><span>GOVERNANÇA</span><h3>Alçadas & Aprovações</h3></div><b>${pending.length}</b></div><p class="fin-copy">Fluxos de aprovação para pagamentos, despesas e exceções financeiras.</p><div class="fin-risks">${pending.slice(0,10).map(x=>`<div class="gold"><b>${esc(x.request_type||'Aprovação')}</b><span>${money(x.amount)} • ${esc(x.status)}</span></div>`).join('')||'<div class="ok"><b>Fila limpa</b><span>Sem aprovações pendentes.</span></div>'}</div></section><section class="card"><div class="fin-panel-head"><div><span>MULTI-ENTITY</span><h3>Empresas & Unidades</h3></div><b>${entities.length||1}</b></div><p class="fin-copy">Estrutura preparada para filiais, holdings, moedas e consolidação futura.</p>${entities.map(x=>`<div class="fin-entity"><b>${esc(x.name)}</b><span>${esc(x.country||'Brasil')} • ${esc(x.currency||'BRL')}</span></div>`).join('')||'<div class="fin-entity"><b>VIMAK Planejados</b><span>Entidade principal • BRL</span></div>'}</section><section class="card"><div class="fin-panel-head"><div><span>AUDIT READY</span><h3>Controles internos</h3></div></div><div class="fin-controls"><span>✓ RLS por empresa</span><span>✓ Trilha de auditoria existente</span><span>✓ Centros de custo</span><span>✓ Segregação por módulos</span><span>○ Workflow maker-checker</span><span>○ Fechamento contábil formal</span></div></section></div>`}
 function financeiro(){
  let ro=finReceivableOpen().reduce((a,x)=>a+finNum(x.amount||x.value),0),

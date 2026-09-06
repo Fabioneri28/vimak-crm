@@ -22,8 +22,15 @@
   function cfg(){ try{return JSON.parse(localStorage.getItem(key())||"{}")}catch(_){return {}} }
   function saveCfg(v){ localStorage.setItem(key(),JSON.stringify(v)); }
   function leo(){
-    const x=cfg().leo||{};
-    return {pix:x.pix??null,debit:x.debit??null,credit:Array.from({length:18},(_,i)=>(x.credit||[])[i]??null)};
+    const db=(cache.cardMachines||[]).find(x=>(x.provider||"").toLowerCase()==="leozinha");
+    const local=cfg().leo||{};
+    const ir=db?.installment_rates||{};
+    const rates=Array.isArray(ir)?ir:(ir.credit||local.credit||[]);
+    return {
+      pix:(Array.isArray(ir)?local.pix:ir.pix)??local.pix??null,
+      debit:db?.debit_rate??local.debit??null,
+      credit:Array.from({length:18},(_,i)=>rates[i]??null)
+    };
   }
   function rate(provider,kind,n,infTier,mpTier){
     n=Math.max(1,Number(n)||1);
@@ -71,15 +78,16 @@
     box.innerHTML=`<div class="card pad pay-safe-winner"><div class="fin-panel-head"><div><span>MELHOR OPÇÃO</span><h3>${rows[0].provider}</h3></div><b class="goldtxt">${rows[0].rate.toFixed(2)}%</b></div>
       <div class="grid g3">${rows.map((x,i)=>`<div class="card kpi ${i===0?"pay-safe-best":""}"><label>${i===0?"★ MELHOR • ":""}${x.provider}</label><strong>${x.rate.toFixed(2)}%</strong><small>Taxa ${money(x.fee)} • Líquido ${money(x.net)}${kind==="Crédito"?` • ${n}x de ${money(x.per)}`:""}</small></div>`).join("")}</div></div>`;
   };
-  window.paySafeLeoSave=function(){
+  window.paySafeLeoSave=async function(){
     const c=cfg(),credit=[];
     for(let i=1;i<=18;i++){const v=document.getElementById("leo"+i).value;credit.push(v===""?null:Number(v))}
-    c.leo={
-      pix:document.getElementById("leoPix").value===""?null:Number(document.getElementById("leoPix").value),
-      debit:document.getElementById("leoDeb").value===""?null:Number(document.getElementById("leoDeb").value),
-      credit
-    };
-    saveCfg(c);toast("Taxas da Leozinha salvas");render();
+    c.leo={pix:document.getElementById("leoPix").value===""?null:Number(document.getElementById("leoPix").value),debit:document.getElementById("leoDeb").value===""?null:Number(document.getElementById("leoDeb").value),credit};
+    saveCfg(c);
+    const existing=(cache.cardMachines||[]).find(x=>(x.provider||"").toLowerCase()==="leozinha");
+    const payload={company_id:profile.company_id,name:"Leozinha",provider:"Leozinha",debit_rate:c.leo.debit||0,credit_1x_rate:c.leo.credit[0]||0,installment_rates:{pix:c.leo.pix,credit:c.leo.credit},settlement_days:1,active:true};
+    const r=existing?await sb.from("card_machines").update(payload).eq("id",existing.id):await sb.from("card_machines").insert(payload);
+    if(r.error)return toast("Erro ao salvar taxas: "+r.error.message);
+    await refreshCore();toast("Taxas da Leozinha salvas na nuvem");render();
   };
 
   function simulator(){
