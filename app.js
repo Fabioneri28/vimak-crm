@@ -2328,7 +2328,37 @@ function ccData(x){return x?.config||x?.data||{}}
 function ccSetTab(v){ccTab=v;render()}
 function ccSetSource(v){ccDraft.source=v;document.querySelectorAll('.cc-source').forEach(x=>x.classList.toggle('active',x.dataset.source===v))}
 function ccPick(row,names){const norm=k=>String(k||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');let m={};Object.keys(row).forEach(k=>m[norm(k)]=row[k]);for(const n of names)if(m[norm(n)]!==undefined&&m[norm(n)]!=='')return m[norm(n)];return ''}
-function ccDelimited(text){const lines=text.replace(/^\ufeff/,'').split(/\r?\n/).filter(x=>x.trim());if(!lines.length)return[];const d=[';','\t',',','|'].sort((a,b)=>lines[0].split(b).length-lines[0].split(a).length)[0],split=l=>l.split(d).map(x=>x.replace(/^"|"$/g,'').trim()),h=split(lines[0]);return lines.slice(1).map(l=>{let a=split(l),o={};h.forEach((k,i)=>o[k]=a[i]||'');return o})}
+function ccDelimited(text){
+ const lines=text.replace(/^\ufeff/,'').split(/\r?\n/).filter(x=>x.trim());
+ if(!lines.length)return[];
+ const d=[';','\t',',','|'].sort((a,b)=>lines[0].split(b).length-lines[0].split(a).length)[0],
+       split=l=>l.split(d).map(x=>x.replace(/^"|"$/g,'').trim()),
+       first=split(lines[0]);
+
+ const promobRaw=d===';'&&first.length>=8&&/^\d+$/.test(first[0]||'')&&/^\d+(?:[.,]\d+)?$/.test(first[1]||'');
+ if(promobRaw){
+  const materialFromCode=code=>{
+   const parts=String(code||'').split('.'),mdfAt=parts.findIndex(x=>String(x).toUpperCase()==='MDF');
+   if(mdfAt<0)return '';
+   let thickAt=-1;
+   for(let i=0;i<mdfAt;i++)if(/^\d+(?:[.,]\d+)?$/.test(parts[i]))thickAt=i;
+   const mats=parts.slice(thickAt+1,mdfAt).filter(Boolean);
+   return mats.length?mats.join(' '):'MDF'
+  };
+  return lines.map(split).map(a=>({
+   quantidade:a[1]||'1',
+   codigo:a[3]||'',
+   descricao:a[4]||'',
+   comprimento:a[5]||'',
+   espessura:a[6]||'',
+   largura:a[7]||'',
+   material:materialFromCode(a[3]||'')
+  })).filter(r=>String(r.codigo||'').toUpperCase().includes('.MDF'))
+ }
+
+ const h=first;
+ return lines.slice(1).map(l=>{let a=split(l),o={};h.forEach((k,i)=>o[k]=a[i]||'');return o})
+}
 function ccParseFile(input){const f=input.files?.[0];if(!f)return;ccDraft.fileName=f.name;const r=new FileReader();r.onload=()=>{try{let rows=[],txt=String(r.result||'');if(f.name.toLowerCase().endsWith('.xml')){const d=new DOMParser().parseFromString(txt,'text/xml');rows=[...d.querySelectorAll('piece,peca,item,part')].map(n=>{let o={};[...n.attributes].forEach(a=>o[a.name]=a.value);[...n.children].forEach(c=>o[c.tagName]=c.textContent.trim());return o})}else rows=ccDelimited(txt);ccDraft.pieces=[];rows.forEach((x,i)=>{let w=Number(String(ccPick(x,['comprimento','length','largura','width'])).replace(',','.'))||0,h=Number(String(ccPick(x,['largura','width','altura','height'])).replace(',','.'))||0,q=Math.max(1,parseInt(ccPick(x,['quantidade','qty','qtd','quantity']))||1);for(let n=0;n<q;n++)if(w&&h)ccDraft.pieces.push({name:ccPick(x,['descricao','descrição','nome','peca','peça','description'])||`Peça ${i+1}`,w,h,t:Number(String(ccPick(x,['espessura','thickness','esp'])).replace(',','.'))||15,material:ccPick(x,['material','chapa','decor','cor'])||'MDF',edge:ccPick(x,['fita','borda','edge'])||'',grain:!['s','1','sim','true'].includes(String(ccPick(x,['ignorarveio','ignoregrain'])).toLowerCase())})});ccPreview();toast(`${ccDraft.pieces.length} peças carregadas`)}catch(e){toast('Não foi possível ler: '+e.message)}};r.readAsText(f);input.value=''}
 function ccPreview(){const b=document.getElementById('ccPreviewRows');if(!b)return;b.innerHTML=ccDraft.pieces.slice(0,100).map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(x.name)}</b></td><td>${x.w}</td><td>${x.h}</td><td>${x.t}</td><td>${esc(x.material)}</td><td>1</td></tr>`).join('')||'<tr><td colspan="7" class="empty">Importe uma lista para pré-visualizar.</td></tr>';const area=ccDraft.pieces.reduce((a,x)=>a+x.w*x.h/1e6,0);document.getElementById('ccPreviewStats')&&(document.getElementById('ccPreviewStats').innerHTML=`<span>Total: <b>${ccDraft.pieces.length}</b> peças</span><span>Área: <b>${area.toFixed(2)} m²</b></span>`)}
 function ccSimulate(){if(!ccDraft.pieces.length)return toast('Importe peças primeiro');cutDraft={pieces:ccDraft.pieces.map(x=>({...x,id:crypto.randomUUID(),source:ccDraft.source})),layouts:[],settings:{sheetW:+document.getElementById('ccSheetW').value||2750,sheetH:+document.getElementById('ccSheetH').value||1850,kerf:+document.getElementById('ccKerf').value||4,trim:+document.getElementById('ccTrim').value||2,minRemnantW:300,minRemnantH:300,grain:document.getElementById('ccGrain').checked},source:'Cortecloud'};openModal('Simulação SmartCut',`<div id="cutResultKpis" class="cut-result-kpis"></div><div id="cutPreview" class="cut-preview"></div>`,'');setTimeout(()=>{cutOptimize();renderCutPreview()},50)}
@@ -2416,10 +2446,105 @@ function cutNum(v){const n=Number(String(v??'').replace(',','.').replace(/[^0-9.
 function cutNormalizeKey(k){return String(k||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'')}
 function cutPick(row,names){const map={};Object.keys(row).forEach(k=>map[cutNormalizeKey(k)]=row[k]);for(const n of names){const v=map[cutNormalizeKey(n)];if(v!==undefined&&v!=='')return v}return ''}
 function cutDetectDelimiter(line){const opts=[';','\t',',','|'];return opts.sort((a,b)=>(line.split(b).length-line.split(a).length))[0]}
-function cutParseDelimited(text){const lines=text.replace(/^\ufeff/,'').split(/\r?\n/).filter(x=>x.trim());if(!lines.length)return[];const d=cutDetectDelimiter(lines[0]);const split=line=>{let out=[],cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(ch===d&&!q){out.push(cur.trim());cur=''}else cur+=ch}out.push(cur.trim());return out};const h=split(lines[0]);return lines.slice(1).map(l=>{const a=split(l),o={};h.forEach((k,i)=>o[k||`col${i+1}`]=a[i]||'');return o})}
+function cutParseDelimited(text){
+ const lines=text.replace(/^\ufeff/,'').split(/\r?\n/).filter(x=>x.trim());
+ if(!lines.length)return[];
+ const d=cutDetectDelimiter(lines[0]);
+ const split=line=>{
+  let out=[],cur='',q=false;
+  for(let i=0;i<line.length;i++){
+   const ch=line[i];
+   if(ch==='"'){
+    if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q
+   }else if(ch===d&&!q){out.push(cur.trim());cur=''}
+   else cur+=ch
+  }
+  out.push(cur.trim());
+  return out
+ };
+
+ const first=split(lines[0]);
+
+ // PROMOB — Lista de Peças TXT sem cabeçalho:
+ // índice;quantidade;área;código;descrição;comprimento;espessura;largura;
+ const looksPromobRaw=
+  d===';' &&
+  first.length>=8 &&
+  /^\d+$/.test(first[0]||'') &&
+  /^\d+(?:[.,]\d+)?$/.test(first[1]||'') &&
+  first[3] &&
+  first[4] &&
+  /^\d+(?:[.,]\d+)?$/.test(first[5]||'') &&
+  /^\d+(?:[.,]\d+)?$/.test(first[6]||'') &&
+  /^\d+(?:[.,]\d+)?$/.test(first[7]||'');
+
+ if(looksPromobRaw){
+  const materialFromCode=code=>{
+   const s=String(code||'');
+   const parts=s.split('.');
+   const mdfAt=parts.findIndex(x=>String(x).toUpperCase()==='MDF');
+   if(mdfAt<0)return '';
+   let thickAt=-1;
+   for(let i=0;i<mdfAt;i++){
+    if(/^\d+(?:[.,]\d+)?$/.test(parts[i])) thickAt=i;
+   }
+   const mats=parts.slice(thickAt+1,mdfAt).filter(Boolean);
+   return mats.length?mats.join(' '):'MDF'
+  };
+
+  return lines.map(l=>split(l)).map(a=>({
+   indice:a[0]||'',
+   quantidade:a[1]||'1',
+   area:a[2]||'',
+   codigo:a[3]||'',
+   descricao:a[4]||'',
+   comprimento:a[5]||'',
+   espessura:a[6]||'',
+   largura:a[7]||'',
+   material:materialFromCode(a[3]||''),
+   __promob_raw:true
+  })).filter(r=>{
+   const code=String(r.codigo||'').toUpperCase();
+   const t=cutNum(r.espessura);
+   const w=cutNum(r.comprimento);
+   const h=cutNum(r.largura);
+   // Plano de corte: aceita somente peças de chapa MDF.
+   // Exclui ferragens, módulos e "Processo de Fabricação".
+   return code.includes('.MDF') && w>0 && h>0 && t>=3 && t<=30
+  })
+ }
+
+ // CSV/TXT convencional com cabeçalho
+ const h=first;
+ return lines.slice(1).map(l=>{
+  const a=split(l),o={};
+  h.forEach((k,i)=>o[k||`col${i+1}`]=a[i]||'');
+  return o
+ })
+}
 function cutParseXML(text){const doc=new DOMParser().parseFromString(text,'text/xml');const nodes=[...doc.querySelectorAll('piece,peca,item,part,component')];return nodes.map(n=>{const o={};[...n.attributes].forEach(a=>o[a.name]=a.value);[...n.children].forEach(c=>o[c.tagName]=c.textContent.trim());return o})}
 function cutRowsToPieces(rows,source){const out=[];rows.forEach((r,idx)=>{let name=cutPick(r,['descricao','descrição','description','designation','nome','name','peca','peça','part','componente','component','referencia','reference']);let w=cutNum(cutPick(r,['comprimento','length','largura','width','dimx','x','medida1']));let h=cutNum(cutPick(r,['largura','width','altura','height','dimy','y','medida2']));let t=cutNum(cutPick(r,['espessura','thickness','thick','esp','z']));let qty=Math.max(1,Math.round(cutNum(cutPick(r,['quantidade','quantity','qty','qtd']))||1));let material=cutPick(r,['material','chapa','sheet','board','decor','cor','color'])||'MDF';let grain=String(cutPick(r,['veio','grain','sentido','direction'])).toLowerCase();let edge=cutPick(r,['fita','borda','edge','edgeband','edge_band'])||'';if(w>0&&h>0){for(let q=0;q<qty;q++)out.push({id:crypto.randomUUID(),name:name||`Peça ${idx+1}`,w,h,t:t||15,material,grain:grain&&!['nao','não','none','0','false'].includes(grain),edge,source})}});return out}
-function cutImportFile(input){const f=input.files?.[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{try{const text=String(reader.result||'');let rows=f.name.toLowerCase().endsWith('.xml')?cutParseXML(text):cutParseDelimited(text);const pcs=cutRowsToPieces(rows,document.getElementById('cutSource')?.value||'Arquivo');if(!pcs.length)return toast('Não encontrei colunas de medidas reconhecíveis. Use CSV/TXT/XML com comprimento e largura.');cutDraft.pieces.push(...pcs);refreshCutPieces();toast(`${pcs.length} peças importadas de ${f.name}`)}catch(e){toast('Falha ao ler arquivo: '+e.message)}};reader.readAsText(f);input.value=''}
+function cutImportFile(input){
+ const f=input.files?.[0];if(!f)return;
+ const reader=new FileReader();
+ reader.onload=()=>{
+  try{
+   const text=String(reader.result||'');
+   let rows=f.name.toLowerCase().endsWith('.xml')?cutParseXML(text):cutParseDelimited(text);
+   const pcs=cutRowsToPieces(rows,document.getElementById('cutSource')?.value||'Arquivo');
+   if(!pcs.length)return toast('Não encontrei peças de chapa válidas. Para TXT do Promob, use a Lista de Peças separada por ponto e vírgula.');
+   cutDraft.pieces.push(...pcs);
+   refreshCutPieces();
+   const promobRaw=rows.some?.(r=>r.__promob_raw);
+   toast(`${pcs.length} peças importadas de ${f.name}${promobRaw?' • TXT Promob reconhecido':''}`)
+  }catch(e){
+   console.error('[SmartCut] erro ao importar arquivo',e);
+   toast('Falha ao ler arquivo: '+e.message)
+  }
+ };
+ reader.readAsText(f,'UTF-8');
+ input.value=''
+}
 function cutAddPiece(){cutDraft.pieces.push({id:crypto.randomUUID(),name:'Nova peça',w:600,h:400,t:15,material:'MDF Branco',grain:false,edge:'',source:'Manual'});refreshCutPieces()}
 function cutRemovePiece(i){cutDraft.pieces.splice(i,1);refreshCutPieces()}
 function cutPieceRow(x,i){return `<tr><td><input class="table-input wide" value="${esc(x.name)}" oninput="cutDraft.pieces[${i}].name=this.value"></td><td><input class="table-input" value="${esc(x.material)}" oninput="cutDraft.pieces[${i}].material=this.value"></td><td><input class="table-input num" type="number" value="${x.w}" oninput="cutDraft.pieces[${i}].w=cutNum(this.value)"></td><td><input class="table-input num" type="number" value="${x.h}" oninput="cutDraft.pieces[${i}].h=cutNum(this.value)"></td><td><input class="table-input num" type="number" value="${x.t}" oninput="cutDraft.pieces[${i}].t=cutNum(this.value)"></td><td><input type="checkbox" ${x.grain?'checked':''} onchange="cutDraft.pieces[${i}].grain=this.checked"></td><td><input class="table-input" value="${esc(x.edge||'')}" oninput="cutDraft.pieces[${i}].edge=this.value"></td><td><button class="btn sm danger" onclick="cutRemovePiece(${i})">×</button></td></tr>`}
