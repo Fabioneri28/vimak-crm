@@ -14,6 +14,8 @@ const TITLES=Object.fromEntries(NAV.flatMap(g=>g[1].map(i=>[i[0],i[2]])));
 let page=location.hash.slice(1)||"dashboard";
 let session=null, profile=null, company=null, cache={clients:[],leads:[],proposals:[],proposalItems:[],proposalModels:[],measurements:[],purchaseOrders:[],purchaseOrderItems:[],documentTemplates:[],productionProjects:[],cuttingPlans:[],sheetRemnants:[],integrations:[],installationTeams:[],installationSchedule:[],costCenters:[],bankAccounts:[],accountsReceivable:[],accountsPayable:[],invoices:[],cardMachines:[],cardMachineRates:[],cardTransactions:[],cardSettlements:[],financeBudgets:[],financeBudgetItems:[],financeTransactions:[],financeApprovals:[],financeEntities:[],suppliers:[],partners:[],afterSales:[],inputs:[]};
 
+let adminCache={loaded:false,loading:false,profiles:[],audit:[],plans:[],subscription:null,requests:[],invites:[],error:""};
+
 const sb = supabase.createClient(
   window.VIMAK_CONFIG.supabaseUrl,
   window.VIMAK_CONFIG.supabasePublishableKey
@@ -702,10 +704,160 @@ async function deleteRow(table,id){
  if(error)return toast("Erro: "+error.message);
  toast("Registro excluído");render();
 }
-function empresa(){return shell("Configurações da Empresa","Dados reais do tenant ativo","",`<div class="card pad"><div class="field"><label>Empresa</label><input value="${esc(company.name)}" disabled></div><div class="field" style="margin-top:10px"><label>Plano</label><input value="${esc(company.plan||"trial")}" disabled></div><div class="notice" style="margin-top:12px">Empresa vinculada ao usuário autenticado via Supabase.</div></div>`)}
-function usuarios(){return shell("Usuários","Perfis vinculados à empresa","",`<div class="notice">Nesta V6, criação de usuários adicionais será feita pela camada administrativa segura. Seu usuário atual: <b>${esc(profile.email||session.user.email)}</b> • ${esc(profile.role)}</div>`)}
-function auditoria(){return simpleTable("Auditoria","Eventos do ambiente","",["Data","Usuário","Ação"],[])}
-function planos(){return shell("Assinatura / Planos","Planos comerciais do SaaS","",`<div class="grid g3">${["Essencial","Profissional","Premium"].map(x=>`<div class="card pad"><h2 class="goldtxt">${x}</h2><button class="btn">Selecionar</button></div>`).join("")}</div>`)}
+function cfgSettings(){return company.settings||{}}
+function cfgAddress(){return company.address||{}}
+function empresa(){
+ const a=cfgAddress(),st=cfgSettings();
+ return shell("Configurações da Empresa","Identidade, dados fiscais, comunicação e marca da sua empresa",
+ `<button class="btn gold" onclick="cfgSave()">Salvar alterações</button>`,
+ `<div class="admin-hero"><div><span class="measurement-version">V6.22 • COMPANY CONTROL</span><h2>Central da Empresa</h2><p>As informações abaixo alimentam documentos, propostas, área do cliente e identidade visual do CRM.</p></div><div class="admin-badge"><span>PLANO ATUAL</span><b>${esc(company.plan||'trial')}</b></div></div>
+ <div class="admin-layout">
+  <section class="card pad">
+   <div class="admin-section-head"><div><span>IDENTIDADE</span><h3>Dados da empresa</h3></div></div>
+   <div class="form-grid">
+    <div class="field"><label>Nome fantasia</label><input id="cfgName" value="${esc(company.name||'')}"></div>
+    <div class="field"><label>Razão social</label><input id="cfgLegal" value="${esc(company.legal_name||'')}"></div>
+    <div class="field"><label>CNPJ / CPF</label><input id="cfgDoc" value="${esc(company.document||'')}"></div>
+    <div class="field"><label>E-mail</label><input id="cfgEmail" type="email" value="${esc(company.email||'')}"></div>
+    <div class="field"><label>Telefone / WhatsApp</label><input id="cfgPhone" value="${esc(company.phone||'')}"></div>
+    <div class="field"><label>Site</label><input id="cfgSite" value="${esc(st.site||'')}"></div>
+   </div>
+  </section>
+  <aside class="card pad admin-brand-card">
+   <div class="admin-logo-preview">${company.logo_url?`<img src="${esc(company.logo_url)}">`:`<div>${esc((company.name||'V').charAt(0))}</div>`}</div>
+   <h3>Identidade visual</h3><p>Envie a logo oficial para aparecer no sistema.</p>
+   <input id="cfgLogoFile" type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="cfgUploadLogo(this)">
+   <button class="btn gold" onclick="cfgLogoFile.click()">Enviar nova logo</button>
+  </aside>
+ </div>
+ <div class="grid g2 admin-gap">
+  <section class="card pad"><div class="admin-section-head"><div><span>ENDEREÇO</span><h3>Endereço comercial</h3></div></div><div class="form-grid">
+   <div class="field"><label>CEP</label><input id="cfgCep" value="${esc(a.cep||'')}"></div>
+   <div class="field"><label>Rua / Avenida</label><input id="cfgStreet" value="${esc(a.street||a.rua||'')}"></div>
+   <div class="field"><label>Número</label><input id="cfgNumber" value="${esc(a.number||a.numero||'')}"></div>
+   <div class="field"><label>Complemento</label><input id="cfgComp" value="${esc(a.complement||a.complemento||'')}"></div>
+   <div class="field"><label>Bairro</label><input id="cfgDistrict" value="${esc(a.district||a.bairro||'')}"></div>
+   <div class="field"><label>Cidade</label><input id="cfgCity" value="${esc(a.city||a.cidade||'')}"></div>
+   <div class="field"><label>Estado</label><input id="cfgState" value="${esc(a.state||a.estado||'')}"></div>
+  </div></section>
+  <section class="card pad"><div class="admin-section-head"><div><span>COMERCIAL</span><h3>Preferências padrão</h3></div></div><div class="form-grid">
+   <div class="field"><label>Prazo padrão de entrega (dias)</label><input id="cfgDelivery" type="number" value="${esc(st.delivery_days||45)}"></div>
+   <div class="field"><label>Garantia padrão (meses)</label><input id="cfgWarranty" type="number" value="${esc(st.warranty_months||60)}"></div>
+   <div class="field"><label>Validade de proposta (dias)</label><input id="cfgProposalDays" type="number" value="${esc(st.proposal_validity_days||10)}"></div>
+   <div class="field"><label>Moeda</label><select id="cfgCurrency"><option ${st.currency==='BRL'||!st.currency?'selected':''}>BRL</option></select></div>
+  </div></section>
+ </div>`)
+}
+async function cfgSave(){
+ const address={cep:cfgCep.value,street:cfgStreet.value,number:cfgNumber.value,complement:cfgComp.value,district:cfgDistrict.value,city:cfgCity.value,state:cfgState.value};
+ const settings={...(company.settings||{}),site:cfgSite.value,delivery_days:Number(cfgDelivery.value||0),warranty_months:Number(cfgWarranty.value||0),proposal_validity_days:Number(cfgProposalDays.value||0),currency:cfgCurrency.value};
+ const payload={name:cfgName.value.trim(),legal_name:cfgLegal.value.trim(),document:cfgDoc.value.trim(),email:cfgEmail.value.trim(),phone:cfgPhone.value.trim(),address,settings,updated_at:new Date().toISOString()};
+ if(!payload.name)return toast("Informe o nome da empresa");
+ const {data,error}=await sb.from("companies").update(payload).eq("id",company.id).select().single();
+ if(error)return toast("Erro: "+error.message);
+ company=data; syncChrome(); toast("Configurações salvas");
+ await admLog("companies",company.id,"UPDATE_CONFIG",payload)
+}
+async function cfgUploadLogo(input){
+ const file=input.files?.[0]; if(!file)return;
+ if(file.size>4*1024*1024)return toast("Use uma imagem de até 4 MB");
+ const ext=(file.name.split(".").pop()||"png").toLowerCase(),path=`${company.id}/logo-${Date.now()}.${ext}`;
+ toast("Enviando logo...");
+ const up=await sb.storage.from("company-logos").upload(path,file,{upsert:true,contentType:file.type});
+ if(up.error)return toast("Erro no upload: "+up.error.message);
+ const pub=sb.storage.from("company-logos").getPublicUrl(path).data.publicUrl;
+ const {data,error}=await sb.from("companies").update({logo_url:pub,updated_at:new Date().toISOString()}).eq("id",company.id).select().single();
+ if(error)return toast("Erro: "+error.message);
+ company=data;syncChrome();render();toast("Logo atualizada");await admLog("companies",company.id,"UPDATE_LOGO",{logo_url:pub})
+}
+function admRoleLabel(r){return r||"Vendedor"}
+function admIsAdmin(){return ["Administrador","Admin","Owner"].includes(profile.role)}
+async function admLoad(){
+ if(adminCache.loading)return;
+ adminCache.loading=true;
+ try{
+  const [u,a,p,sub,req,inv]=await Promise.all([
+   sb.from("profiles").select("*").eq("company_id",company.id).order("name"),
+   sb.from("audit_logs").select("*").eq("company_id",company.id).order("created_at",{ascending:false}).limit(300),
+   sb.from("subscription_plans").select("*").eq("active",true).order("sort_order"),
+   sb.from("company_subscriptions").select("*").eq("company_id",company.id).maybeSingle(),
+   sb.from("subscription_requests").select("*").eq("company_id",company.id).order("created_at",{ascending:false}).limit(20),
+   sb.from("team_invites").select("*").eq("company_id",company.id).order("created_at",{ascending:false}).limit(50)
+  ]);
+  adminCache.profiles=u.data||[];adminCache.audit=a.data||[];adminCache.plans=p.data||[];adminCache.subscription=sub.data||null;adminCache.requests=req.data||[];adminCache.invites=inv.data||[];
+  adminCache.error=[u,a,p,sub,req,inv].map(x=>x.error?.message).filter(Boolean).join(" • ");adminCache.loaded=true
+ }catch(e){adminCache.error=e.message||String(e)}
+ adminCache.loading=false;
+ if(["usuarios","auditoria","planos"].includes(page))content.innerHTML=(VIEWS[page]||dashboard)()
+}
+async function admLog(table_name,record_id,action,new_data={}){
+ try{await sb.from("audit_logs").insert({company_id:company.id,user_id:session.user.id,table_name,record_id:String(record_id||""),action,new_data})}catch(e){console.warn(e)}
+}
+function usuarios(){
+ if(!adminCache.loaded&&!adminCache.loading)setTimeout(admLoad,0);
+ const rows=adminCache.profiles.map(u=>`<tr><td><div class="admin-user"><span>${esc((u.name||"?").split(" ").map(x=>x[0]).join("").slice(0,2))}</span><div><b>${esc(u.name)}</b><small>${esc(u.email||"")}</small></div></div></td><td><span class="admin-role">${esc(admRoleLabel(u.role))}</span></td><td>${u.active!==false?'<span class="status ok">Ativo</span>':'<span class="status">Inativo</span>'}</td><td>${u.id===session.user.id?'<span class="goldtxt">Você</span>':admIsAdmin()?`<button class="btn sm" onclick="usrEdit('${u.id}')">Gerenciar</button>`:"—"}</td></tr>`).join("");
+ return shell("Usuários da Equipe","Acessos, funções, permissões e convites da sua empresa",admIsAdmin()?`<button class="btn gold" onclick="usrInvite()">+ Convidar usuário</button>`:"",
+ `<div class="admin-hero"><div><span class="measurement-version">V6.22 • ACCESS CONTROL</span><h2>Equipe & Permissões</h2><p>Controle quem acessa o CRM e quais áreas cada função pode utilizar.</p></div><div class="admin-badge"><span>USUÁRIOS ATIVOS</span><b>${adminCache.profiles.filter(x=>x.active!==false).length}</b></div></div>
+ ${adminCache.error?`<div class="notice">Execute a migration 007_admin_governanca_pro.sql para habilitar convites e assinatura. Usuários existentes continuam disponíveis quando permitido pelo RLS.</div>`:""}
+ <div class="grid g3 proposal-kpis"><div class="card kpi"><label>Total</label><strong>${adminCache.profiles.length}</strong></div><div class="card kpi"><label>Administradores</label><strong>${adminCache.profiles.filter(x=>["Administrador","Admin","Owner"].includes(x.role)).length}</strong></div><div class="card kpi"><label>Convites pendentes</label><strong>${adminCache.invites.filter(x=>x.status==="Pendente").length}</strong></div></div>
+ <div class="card admin-gap"><div class="table-wrap"><table class="table"><thead><tr><th>Usuário</th><th>Função</th><th>Status</th><th>Ações</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="empty">Carregando usuários...</td></tr>'}</tbody></table></div></div>`)
+}
+function usrEdit(id){
+ const u=adminCache.profiles.find(x=>x.id===id);if(!u)return;
+ openModal("Gerenciar Usuário",`<div class="form-grid"><div class="field full"><label>Nome</label><input id="usrName" value="${esc(u.name)}"></div><div class="field"><label>Função</label><select id="usrRole">${["Administrador","Gestor","Vendedor","Projetista","Financeiro","Produção","Montador"].map(r=>`<option ${u.role===r?"selected":""}>${r}</option>`).join("")}</select></div><div class="field"><label>Status</label><select id="usrActive"><option value="true" ${u.active!==false?"selected":""}>Ativo</option><option value="false" ${u.active===false?"selected":""}>Inativo</option></select></div></div>`,`usrSave('${id}')`)
+}
+async function usrSave(id){
+ const payload={name:usrName.value.trim(),role:usrRole.value,active:usrActive.value==="true",updated_at:new Date().toISOString()};
+ const {error}=await sb.from("profiles").update(payload).eq("id",id).eq("company_id",company.id);
+ if(error)return toast("Erro: "+error.message);closeModal();adminCache.loaded=false;await admLog("profiles",id,"UPDATE_USER",payload);toast("Usuário atualizado");admLoad()
+}
+function usrInvite(){
+ openModal("Convidar usuário",`<div class="form-grid"><div class="field"><label>Nome</label><input id="invName"></div><div class="field"><label>E-mail</label><input id="invEmail" type="email"></div><div class="field"><label>Função</label><select id="invRole">${["Administrador","Gestor","Vendedor","Projetista","Financeiro","Produção","Montador"].map(r=>`<option>${r}</option>`).join("")}</select></div></div><div class="notice">O convite é registrado com segurança. A criação da conta Auth continua protegida pelo fluxo administrativo do Supabase.</div>`,`usrSaveInvite()`)
+}
+async function usrSaveInvite(){
+ if(!invName.value.trim()||!invEmail.value.trim())return toast("Preencha nome e e-mail");
+ const token=crypto.randomUUID();
+ const payload={company_id:company.id,name:invName.value.trim(),email:invEmail.value.trim().toLowerCase(),role:invRole.value,status:"Pendente",invite_token:token,invited_by:session.user.id};
+ const {error}=await sb.from("team_invites").insert(payload);
+ if(error)return toast("Erro: "+error.message);closeModal();adminCache.loaded=false;await admLog("team_invites",invEmail.value,"CREATE_INVITE",{email:payload.email,role:payload.role});toast("Convite registrado");admLoad()
+}
+let auditFilter="todos";
+function auditoria(){
+ if(!adminCache.loaded&&!adminCache.loading)setTimeout(admLoad,0);
+ let a=adminCache.audit;
+ if(auditFilter!=="todos")a=a.filter(x=>x.table_name===auditFilter);
+ const tables=[...new Set(adminCache.audit.map(x=>x.table_name).filter(Boolean))];
+ const rows=a.map(x=>{let u=adminCache.profiles.find(p=>p.id===x.user_id);return `<tr><td>${new Date(x.created_at).toLocaleString("pt-BR")}</td><td>${esc(u?.name||x.user_id||"Sistema")}</td><td><span class="admin-role">${esc(x.action)}</span></td><td>${esc(x.table_name||"—")}</td><td><button class="btn sm" onclick='auditView(${JSON.stringify(JSON.stringify(x)).replace(/'/g,"&#39;")})'>Detalhes</button></td></tr>`}).join("");
+ return shell("Auditoria","Rastreabilidade das ações realizadas dentro do CRM",`<button class="btn" onclick="auditExport()">Exportar CSV</button>`,
+ `<div class="admin-hero"><div><span class="measurement-version">V6.22 • GOVERNANCE</span><h2>Audit Trail</h2><p>Histórico de alterações, usuários, módulos e eventos do ambiente.</p></div><div class="admin-badge"><span>EVENTOS</span><b>${adminCache.audit.length}</b></div></div>
+ <div class="filters"><div class="field"><label>Módulo</label><select onchange="auditFilter=this.value;render()"><option value="todos">Todos</option>${tables.map(t=>`<option ${auditFilter===t?"selected":""}>${esc(t)}</option>`).join("")}</select></div><div class="field"><label>Buscar</label><input oninput="filterTable(this.value)" placeholder="Usuário, ação ou módulo"></div></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>Módulo</th><th></th></tr></thead><tbody id="rows">${rows||'<tr><td colspan="5" class="empty">Carregando auditoria...</td></tr>'}</tbody></table></div></div>`)
+}
+function auditView(raw){let x=JSON.parse(raw);openModal("Detalhes da Auditoria",`<div class="audit-json"><b>Ação</b><pre>${esc(x.action||"")}</pre><b>Registro</b><pre>${esc(x.record_id||"")}</pre><b>Antes</b><pre>${esc(JSON.stringify(x.old_data||{},null,2))}</pre><b>Depois</b><pre>${esc(JSON.stringify(x.new_data||{},null,2))}</pre></div>`,"")}
+function auditExport(){
+ const rows=[["Data","Usuário","Ação","Módulo","Registro"],...adminCache.audit.map(x=>[x.created_at,adminCache.profiles.find(p=>p.id===x.user_id)?.name||x.user_id||"Sistema",x.action,x.table_name||"",x.record_id||""])];
+ const csv=rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(";")).join("\n");
+ const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`auditoria-vimak-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href)
+}
+function planMoney(v){return Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}
+function planos(){
+ if(!adminCache.loaded&&!adminCache.loading)setTimeout(admLoad,0);
+ const current=adminCache.subscription?.plan_code||company.plan||"trial";
+ const cards=adminCache.plans.map(p=>{let features=p.features||[];return `<article class="plan-card ${current===p.code?"current":""}"><div class="plan-top"><span>${esc(p.badge||"PLANO")}</span>${current===p.code?'<b>ATUAL</b>':""}</div><h2>${esc(p.name)}</h2><div class="plan-price"><strong>${planMoney(p.monthly_price)}</strong><span>/mês</span></div><p>${esc(p.description||"")}</p><div class="plan-features">${features.map(f=>`<div>✓ ${esc(f)}</div>`).join("")}</div><button class="btn ${current===p.code?"":"gold"}" ${current===p.code?"disabled":""} onclick="planRequest('${p.code}')">${current===p.code?"Plano atual":"Solicitar este plano"}</button></article>`}).join("");
+ return shell("Assinatura / Planos","Gestão do plano SaaS, recursos contratados e histórico de solicitações","",
+ `<div class="admin-hero"><div><span class="measurement-version">V6.22 • SaaS BILLING CENTER</span><h2>Assinatura VIMAK CRM</h2><p>Escolha o nível adequado à operação. Alterações de cobrança só entram em vigor após processamento administrativo.</p></div><div class="admin-badge"><span>ASSINATURA</span><b>${esc(current.toUpperCase())}</b></div></div>
+ ${adminCache.error?`<div class="notice">Para ativar a central de assinatura execute a migration 007_admin_governanca_pro.sql.</div>`:""}
+ <div class="plans-grid">${cards||'<div class="card pad empty">Carregando planos...</div>'}</div>
+ <section class="card pad admin-gap"><div class="admin-section-head"><div><span>HISTÓRICO</span><h3>Solicitações de alteração</h3></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Data</th><th>Plano solicitado</th><th>Status</th></tr></thead><tbody>${adminCache.requests.map(r=>`<tr><td>${new Date(r.created_at).toLocaleDateString("pt-BR")}</td><td>${esc(r.requested_plan_code)}</td><td><span class="admin-role">${esc(r.status)}</span></td></tr>`).join("")||'<tr><td colspan="3" class="empty">Nenhuma solicitação.</td></tr>'}</tbody></table></div></section>`)
+}
+async function planRequest(code){
+ const p=adminCache.plans.find(x=>x.code===code);if(!p)return;
+ openModal("Alterar assinatura",`<div class="plan-confirm"><span>NOVO PLANO</span><h2>${esc(p.name)}</h2><strong>${planMoney(p.monthly_price)}/mês</strong><p>Esta ação registra uma solicitação. Não realizamos cobrança automática sem integração de pagamento configurada.</p></div>`,`planConfirm('${code}')`)
+}
+async function planConfirm(code){
+ const {error}=await sb.from("subscription_requests").insert({company_id:company.id,requested_plan_code:code,status:"Pendente",requested_by:session.user.id});
+ if(error)return toast("Erro: "+error.message);closeModal();adminCache.loaded=false;await admLog("subscription_requests",code,"REQUEST_PLAN",{plan:code});toast("Solicitação registrada");admLoad()
+}
 function supplierById(id){return cache.suppliers.find(x=>x.id===id)}
 function supplierPhone(v){return String(v||"").replace(/\D/g,"")}
 function supplierForm(x={}){

@@ -303,3 +303,12 @@ CFO Command Center inspirado em práticas de ERP corporativo:
 - Conciliação manual de liquidações.
 - Não há integração API bancária/adquirente inventada: taxas e vendas são cadastradas/importadas até existir API oficial/credenciais homologadas.
 - Migration aditiva `006_card_acquiring_pro.sql`.
+
+
+## V6.22 — Administração & Governança PRO
+- Configurações completas da empresa + upload de logo.
+- Usuários, funções, ativação/inativação e convites.
+- Auditoria com filtros, detalhes e exportação CSV.
+- Assinatura/Planos com plano atual, recursos e solicitações de alteração.
+- Migration nova: `007_admin_governanca_pro.sql`.
+- Núcleo de autenticação e carregamento da base preservado.
