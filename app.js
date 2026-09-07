@@ -1204,6 +1204,147 @@ function maintenanceDate(v){if(!v)return"—";const d=new Date(v+"T12:00:00");re
 function maintenanceOs(x){return `OS-${String(x.os_number||"").padStart(5,"0")}`}
 function maintenanceData(x){return x?.data&&typeof x.data==="object"?x.data:{}}
 
+
+function maintenanceRouteUrl(address){
+ return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address||"")}`
+}
+function maintenanceQrUrl(address){
+ return `https://quickchart.io/qr?text=${encodeURIComponent(maintenanceRouteUrl(address))}&size=180`
+}
+function maintenanceFormSnapshot(){
+ const client_id=document.getElementById("mtClient")?.value||"";
+ const proposal_id=document.getElementById("mtProposal")?.value||"";
+ return {
+  client_id,
+  client:maintenanceClient(client_id),
+  proposal_id,
+  proposal:maintenanceProposal(proposal_id),
+  environment:document.getElementById("mtEnvironment")?.value.trim()||"",
+  address:document.getElementById("mtAddress")?.value.trim()||"",
+  scheduled_date:document.getElementById("mtDate")?.value||"",
+  period:document.getElementById("mtPeriod")?.value||"",
+  start_time:document.getElementById("mtStart")?.value||"",
+  end_time:document.getElementById("mtEnd")?.value||"",
+  technician:document.getElementById("mtTechnician")?.value.trim()||"",
+  companion:document.getElementById("mtCompanion")?.value.trim()||"",
+  service_type:document.getElementById("mtType")?.value||"",
+  priority:document.getElementById("mtPriority")?.value||"",
+  status:document.getElementById("mtStatus")?.value||"",
+  cost:Number(document.getElementById("mtCost")?.value||0),
+  description:document.getElementById("mtDescription")?.value.trim()||"",
+  diagnosis:document.getElementById("mtDiagnosis")?.value.trim()||"",
+  notes:document.getElementById("mtNotes")?.value.trim()||"",
+  services:maintenanceCollectServices(),
+  materials:maintenanceCollectMaterials()
+ }
+}
+function maintenancePreviewCard(snapshot,id=""){
+ const c=snapshot.client||{},p=snapshot.proposal||{};
+ const os=id&&maintenanceById(id)?maintenanceOs(maintenanceById(id)):"PRÉVIA";
+ const route=maintenanceRouteUrl(snapshot.address);
+ const qr=maintenanceQrUrl(snapshot.address);
+ return `<div class="guide-preview-paper">
+  <div class="guide-top">
+   <div class="guide-brand"><b>VIMAK</b><span>PLANEJADOS • PÓS-VENDA</span></div>
+   <div class="guide-os"><span>GUIA DE ORDEM DE SERVIÇO</span><b>${esc(os)}</b></div>
+  </div>
+  <div class="guide-title"><h3>Visita Técnica • Manutenção • Assistência • Reparo</h3></div>
+
+  <div class="guide-grid two">
+   <section><h4>1. Dados do cliente</h4><p><b>${esc(c.name||"Cliente")}</b></p><p>${esc(c.whatsapp||c.phone||"")}</p><p>${esc(c.email||"")}</p></section>
+   <section><h4>6. Itens / materiais a levar</h4>${snapshot.materials.length?snapshot.materials.slice(0,5).map(m=>`<p>${esc(m.code||"")} ${esc(m.description)} • ${m.qty||0} ${esc(m.unit||"un")}</p>`).join(""):"<p>Sem materiais informados.</p>"}</section>
+  </div>
+
+  <div class="guide-grid two">
+   <section><h4>2. Endereço do atendimento</h4><p><b>${esc(snapshot.address||"Endereço não informado")}</b></p><p>${esc(snapshot.environment||"")}</p></section>
+   <section><h4>7. Checklist do atendimento</h4><p>☐ Conferir endereço e contato</p><p>☐ Conferir itens e ferramentas</p><p>☐ Registrar fotos antes/depois</p><p>☐ Validar funcionamento com cliente</p></section>
+  </div>
+
+  <div class="guide-grid two">
+   <section><h4>3. Como chegar?</h4><div class="guide-route"><img src="${qr}" alt="QR rota"><div><p>Escaneie para abrir a rota</p><a href="${route}" target="_blank">Abrir no Google Maps</a><small>${maintenanceDate(snapshot.scheduled_date)} • ${esc(snapshot.start_time||snapshot.period||"")}</small></div></div></section>
+   <section><h4>8. Observações importantes</h4><p>• Contatar o cliente antes da chegada.</p><p>• Utilizar EPIs e manter o ambiente organizado.</p><p>• Consultar a empresa para serviços fora do escopo.</p><p>• Registrar necessidade de retorno.</p></section>
+  </div>
+
+  <div class="guide-grid two">
+   <section><h4>4. Dados do serviço</h4><p><b>${esc(snapshot.service_type||"—")}</b> • ${esc(snapshot.priority||"Normal")}</p><p>${esc(snapshot.description||"—")}</p></section>
+   <section><h4>9. Contato / suporte</h4><p>${esc(company?.name||"VIMAK Planejados")}</p><p>${esc(company?.phone||"")}</p><p>${esc(company?.email||"")}</p></section>
+  </div>
+
+  <div class="guide-grid two">
+   <section><h4>5. Responsáveis</h4><p>Técnico: <b>${esc(snapshot.technician||"—")}</b></p><p>Acompanhante: ${esc(snapshot.companion||c.name||"—")}</p></section>
+   <section><h4>10. Confirmação do atendimento</h4><p>Início: ____/____/______  ____:____</p><p>Conclusão: ____/____/______  ____:____</p></section>
+  </div>
+  <div class="guide-footer"><span>Organização • Agilidade • Qualidade</span><b>VIMAK PLANEJADOS</b></div>
+ </div>`
+}
+function maintenanceRefreshPreview(id=""){
+ const box=document.getElementById("maintenanceGuidePreview");
+ if(box)box.innerHTML=maintenancePreviewCard(maintenanceFormSnapshot(),id)
+}
+function maintenanceWatchPreview(id=""){
+ setTimeout(()=>{
+  const root=document.querySelector(".maint-form");
+  if(!root)return;
+  root.addEventListener("input",()=>maintenanceRefreshPreview(id));
+  root.addEventListener("change",()=>maintenanceRefreshPreview(id));
+  maintenanceRefreshPreview(id)
+ },0)
+}
+function maintenanceGuidePdf(id=""){
+ const s=maintenanceFormSnapshot();
+ if(!s.client_id||!s.scheduled_date||!s.description)return toast("Preencha cliente, data e descrição antes de gerar a guia");
+ maintenanceGuidePrintFromSnapshot(s,id)
+}
+function maintenanceShareWhatsApp(){
+ const s=maintenanceFormSnapshot(),c=s.client||{};
+ const phone=String(c.whatsapp||c.phone||"").replace(/\D/g,"");
+ if(!phone)return toast("Cliente sem WhatsApp cadastrado");
+ const txt=`Olá ${c.name||""}! Seu atendimento VIMAK foi agendado para ${maintenanceDate(s.scheduled_date)} ${s.start_time?`às ${s.start_time}`:`(${s.period||""})`}. Tipo: ${s.service_type||"Assistência técnica"}.`;
+ window.open(`https://wa.me/${phone}?text=${encodeURIComponent(txt)}`,"_blank")
+}
+function maintenanceGuidePrintFromSnapshot(snapshot,id=""){
+ const c=snapshot.client||{},p=snapshot.proposal||{};
+ const os=id&&maintenanceById(id)?maintenanceOs(maintenanceById(id)):"OS";
+ const qr=maintenanceQrUrl(snapshot.address);
+ const w=window.open("","_blank");
+ const services=snapshot.services||[],materials=snapshot.materials||[];
+ w.document.write(`<html><head><title>Guia ${os}</title><style>
+ @page{size:A4;margin:8mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111;margin:0;font-size:10px}.top{display:flex;justify-content:space-between;background:#111;color:#fff;padding:14px 16px;border-bottom:4px solid #c9973f}.brand b{font-size:28px;letter-spacing:3px}.brand span{display:block;font-size:7px;color:#d9b565}.os{text-align:right}.os b{display:block;color:#e4b65e;font-size:20px}.title{padding:12px 0 8px;border-bottom:1px solid #c9973f}.title h1{font-size:23px;margin:0}.cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.box{border:1px solid #bbb}.box h3{margin:0;background:linear-gradient(90deg,#191919,#9c7a43);color:white;padding:6px 8px;font-size:10px}.box .body{padding:7px;min-height:68px}.body p{margin:3px 0}.qr{display:grid;grid-template-columns:84px 1fr;gap:8px;align-items:center}.qr img{width:84px;height:84px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid #bbb;padding:4px}.table th{background:#eee}.sign{display:grid;grid-template-columns:1fr 1fr;gap:25px;margin-top:22px}.sig{border-top:1px solid #333;text-align:center;padding-top:4px}.footer{margin-top:16px;background:#111;color:#fff;padding:8px;display:flex;justify-content:space-between;border-top:3px solid #c9973f}.gold{color:#d9b565}
+ </style></head><body>
+ <div class="top"><div class="brand"><b>VIMAK</b><span>PLANEJADOS • PÓS-VENDA</span></div><div class="os"><span>GUIA DE ORDEM DE SERVIÇO</span><b>${esc(os)}</b><small>${maintenanceDate(snapshot.scheduled_date)}</small></div></div>
+ <div class="title"><h1>Guia de Ordem de Serviço</h1><p>VISITA TÉCNICA • MANUTENÇÃO • ASSISTÊNCIA • REPARO</p></div>
+
+ <div class="cols">
+  <div class="box"><h3>1. Dados do cliente</h3><div class="body"><p><b>${esc(c.name||"—")}</b></p><p>${esc(c.whatsapp||c.phone||"—")}</p><p>${esc(c.email||"—")}</p></div></div>
+  <div class="box"><h3>6. Itens / materiais a levar</h3><div class="body"><table class="table"><tr><th>Cód.</th><th>Material</th><th>Qtd.</th></tr>${materials.map(m=>`<tr><td>${esc(m.code||"")}</td><td>${esc(m.description||"")}</td><td>${m.qty||0} ${esc(m.unit||"un")}</td></tr>`).join("")||`<tr><td colspan="3">Sem materiais informados.</td></tr>`}</table></div></div>
+ </div>
+
+ <div class="cols">
+  <div class="box"><h3>2. Endereço do atendimento</h3><div class="body"><p><b>${esc(snapshot.address||"—")}</b></p><p>Ambiente: ${esc(snapshot.environment||"—")}</p><p>Projeto: ${esc(p.title||p.number||"—")}</p></div></div>
+  <div class="box"><h3>7. Checklist do atendimento</h3><div class="body"><p>☐ Conferir endereço e contato</p><p>☐ Conferir itens, materiais e ferramentas</p><p>☐ Registrar fotos antes e depois</p><p>☐ Executar serviços conforme OS</p><p>☐ Validar funcionamento com cliente</p><p>☐ Coletar assinatura / aceite</p></div></div>
+ </div>
+
+ <div class="cols">
+  <div class="box"><h3>3. Como chegar?</h3><div class="body qr"><img src="${qr}"><div><p><b>Escaneie o QR Code</b></p><p>Abra a rota no Google Maps.</p><p><b>Data:</b> ${maintenanceDate(snapshot.scheduled_date)}</p><p><b>Horário:</b> ${esc(snapshot.start_time||snapshot.period||"—")}</p></div></div></div>
+  <div class="box"><h3>8. Observações importantes</h3><div class="body"><p>• Entrar em contato com o cliente antes da chegada.</p><p>• Utilizar EPIs e ferramentas adequadas.</p><p>• Manter o ambiente limpo e organizado.</p><p>• Consultar a empresa para serviços fora do escopo.</p><p>• Informar qualquer imprevisto.</p></div></div>
+ </div>
+
+ <div class="cols">
+  <div class="box"><h3>4. Dados do serviço</h3><div class="body"><p><b>${esc(snapshot.service_type||"—")}</b> • Prioridade ${esc(snapshot.priority||"Normal")}</p><p>${esc(snapshot.description||"—")}</p><p><b>Diagnóstico:</b> ${esc(snapshot.diagnosis||"—")}</p></div></div>
+  <div class="box"><h3>9. Contato / suporte</h3><div class="body"><p><b>${esc(company?.name||"VIMAK Planejados")}</b></p><p>${esc(company?.phone||"—")}</p><p>${esc(company?.email||"—")}</p><p>Em caso de dúvida, contatar a empresa antes de alterar o escopo.</p></div></div>
+ </div>
+
+ <div class="cols">
+  <div class="box"><h3>5. Responsáveis</h3><div class="body"><p><b>Técnico:</b> ${esc(snapshot.technician||"—")}</p><p><b>Acompanhante:</b> ${esc(snapshot.companion||c.name||"—")}</p><p><b>Período:</b> ${esc(snapshot.period||"—")}</p><p><b>Término previsto:</b> ${esc(snapshot.end_time||"—")}</p></div></div>
+  <div class="box"><h3>10. Confirmação do atendimento</h3><div class="body"><p>Data de início: ____/____/______ Horário: ____:____</p><p>Data de conclusão: ____/____/______ Horário: ____:____</p></div></div>
+ </div>
+
+ <div class="box" style="margin-top:8px"><h3>Serviços previstos / executados</h3><div class="body"><table class="table"><tr><th>Serviço</th><th>Qtd.</th><th>OK</th></tr>${services.map(s=>`<tr><td>${esc(s.description||"")}</td><td>${s.qty||1}</td><td>☐</td></tr>`).join("")||`<tr><td colspan="3">${esc(snapshot.description||"—")}</td></tr>`}</table></div></div>
+ <div class="sign"><div class="sig">${esc(snapshot.technician||"Técnico")}<br><small>Assinatura do técnico</small></div><div class="sig">${esc(c.name||"Cliente")}<br><small>Assinatura do cliente</small></div></div>
+ <div class="footer"><span>“Cuidamos de cada detalhe, em todos os momentos.”</span><b class="gold">VIMAK PLANEJADOS</b></div>
+ <script>window.onload=()=>setTimeout(()=>window.print(),450)<\/script></body></html>`);
+ w.document.close()
+}
 function maintenanceForm(x={}){
  const d=maintenanceData(x);
  const clientOptions=cache.clients.map(c=>`<option value="${c.id}" ${x.client_id===c.id?"selected":""}>${esc(c.name)}</option>`).join("");
@@ -1213,7 +1354,17 @@ function maintenanceForm(x={}){
  const materials=Array.isArray(d.materials)?d.materials:[];
  const photosBefore=Array.isArray(d.photos_before)?d.photos_before:[];
  const photosAfter=Array.isArray(d.photos_after)?d.photos_after:[];
- return `<div class="maint-form">
+ return `<div class="maint-page-shell">
+  <div class="maint-top-actions">
+   <div><span>PÓS-VENDA / MANUTENÇÃO</span><h2>Ordem de Serviço</h2><p>Preencha os dados e gere automaticamente a guia para o técnico.</p></div>
+   <div class="maint-action-buttons">
+    <button type="button" class="btn" onclick="toast('Use o botão Salvar no rodapé para gravar a OS')">Salvar</button>
+    <button type="button" class="btn gold" onclick="maintenanceGuidePdf('${x.id||""}')">🖨 Gerar PDF (Guia de OS)</button>
+    <button type="button" class="btn whatsapp" onclick="maintenanceShareWhatsApp()">WhatsApp</button>
+   </div>
+  </div>
+  <div class="maint-workspace">
+   <div class="maint-form">
   <div class="maint-form-section"><h3>1. Cliente e projeto</h3><div class="form-grid">
    <div class="field full"><label>Cliente *</label><select id="mtClient"><option value="">Selecione...</option>${clientOptions}</select></div>
    <div class="field"><label>Proposta / Projeto</label><select id="mtProposal"><option value="">Sem vínculo</option>${proposalOptions}</select></div>
@@ -1261,6 +1412,12 @@ function maintenanceForm(x={}){
    <div class="field"><label>Nome para aceite do cliente</label><input id="mtClientAccept" value="${esc(d.client_accept_name||"")}"></div>
    <div class="field"><label>Responsável técnico</label><input id="mtTechAccept" value="${esc(d.technician_accept_name||x.technician||"")}"></div>
   </div></div>
+ </div>
+   <aside class="maint-preview-panel">
+    <div class="maint-preview-head"><b>PRÉ-VISUALIZAÇÃO DA GUIA (PDF)</b><span>Atualização automática</span></div>
+    <div id="maintenanceGuidePreview"></div>
+   </aside>
+  </div>
  </div>`;
 }
 function maintenanceServiceRow(s={},i=Date.now()){
@@ -1300,11 +1457,11 @@ function maintenanceCollectMaterials(){
 }
 async function addMaintenance(){
  if(!cache.clients.length)return toast("Cadastre um cliente antes de agendar manutenção");
- openModal("Agendar Manutenção / Assistência",maintenanceForm(),`saveMaintenance()`);
+ openModal("Agendar Manutenção / Assistência",maintenanceForm(),`saveMaintenance()`); modal.classList.add("maintenance-modal"); maintenanceWatchPreview();
 }
 async function editMaintenance(id){
  const x=maintenanceById(id);if(!x)return;
- openModal(`Editar ${maintenanceOs(x)}`,maintenanceForm(x),`saveMaintenance('${id}')`);
+ openModal(`Editar ${maintenanceOs(x)}`,maintenanceForm(x),`saveMaintenance('${id}')`); modal.classList.add("maintenance-modal"); maintenanceWatchPreview(id);
 }
 async function saveMaintenance(id=""){
  const client_id=document.getElementById("mtClient").value;
