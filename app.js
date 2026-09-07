@@ -1173,6 +1173,253 @@ async function deletePartner(id){
  if(error)return toast("Erro: "+error.message);
  await persistRefresh("Parceiro excluído")
 }
+
+let posvendaTab='chamados';
+let maintenanceOrders=[];
+let maintenanceLoaded=false;
+let maintenanceLoading=false;
+let maintenancePhotoBeforeFiles=[];
+let maintenancePhotoAfterFiles=[];
+
+async function loadMaintenanceOrders(force=false){
+ if(maintenanceLoading)return;
+ if(maintenanceLoaded&&!force)return;
+ maintenanceLoading=true;
+ const {data,error}=await sb.from("maintenance_orders").select("*").order("scheduled_date",{ascending:false}).order("created_at",{ascending:false});
+ maintenanceLoading=false;
+ if(error){
+  console.warn("[Manutenção] tabela indisponível:",error.message);
+  return
+ }
+ maintenanceOrders=data||[];
+ maintenanceLoaded=true;
+ if(page==="posvenda")render()
+}
+function maintenanceEnsureLoaded(){if(!maintenanceLoaded&&!maintenanceLoading)loadMaintenanceOrders()}
+function maintenanceById(id){return maintenanceOrders.find(x=>x.id===id)}
+function maintenanceClient(id){return cache.clients.find(x=>x.id===id)}
+function maintenanceProposal(id){return cache.proposals.find(x=>x.id===id)}
+function maintenanceStatusClass(s){return s==="Concluída"?"ok":s==="Cancelada"?"warn":s==="Em atendimento"?"":"gold"}
+function maintenanceDate(v){if(!v)return"—";const d=new Date(v+"T12:00:00");return isNaN(d)?"—":d.toLocaleDateString("pt-BR")}
+function maintenanceOs(x){return `OS-${String(x.os_number||"").padStart(5,"0")}`}
+function maintenanceData(x){return x?.data&&typeof x.data==="object"?x.data:{}}
+
+function maintenanceForm(x={}){
+ const d=maintenanceData(x);
+ const clientOptions=cache.clients.map(c=>`<option value="${c.id}" ${x.client_id===c.id?"selected":""}>${esc(c.name)}</option>`).join("");
+ const proposalOptions=cache.proposals.map(p=>`<option value="${p.id}" ${x.proposal_id===p.id?"selected":""}>${esc(p.number||"")} ${esc(p.title||"Proposta")}</option>`).join("");
+ maintenancePhotoBeforeFiles=[];maintenancePhotoAfterFiles=[];
+ const services=Array.isArray(d.services)?d.services:[];
+ const materials=Array.isArray(d.materials)?d.materials:[];
+ const photosBefore=Array.isArray(d.photos_before)?d.photos_before:[];
+ const photosAfter=Array.isArray(d.photos_after)?d.photos_after:[];
+ return `<div class="maint-form">
+  <div class="maint-form-section"><h3>1. Cliente e projeto</h3><div class="form-grid">
+   <div class="field full"><label>Cliente *</label><select id="mtClient"><option value="">Selecione...</option>${clientOptions}</select></div>
+   <div class="field"><label>Proposta / Projeto</label><select id="mtProposal"><option value="">Sem vínculo</option>${proposalOptions}</select></div>
+   <div class="field"><label>Ambiente</label><input id="mtEnvironment" value="${esc(d.environment||"")}" placeholder="Ex.: Cozinha, dormitório..."></div>
+   <div class="field full"><label>Endereço do atendimento</label><input id="mtAddress" value="${esc(x.address||d.address||"")}" placeholder="Rua, número, complemento, bairro, cidade"></div>
+  </div></div>
+
+  <div class="maint-form-section"><h3>2. Agendamento</h3><div class="form-grid">
+   <div class="field"><label>Data *</label><input id="mtDate" type="date" value="${esc(x.scheduled_date||"")}"></div>
+   <div class="field"><label>Período</label><select id="mtPeriod">${["Manhã","Tarde","Dia todo","Horário definido"].map(v=>`<option ${d.period===v?"selected":""}>${v}</option>`).join("")}</select></div>
+   <div class="field"><label>Início</label><input id="mtStart" type="time" value="${esc(x.start_time||"")}"></div>
+   <div class="field"><label>Término previsto</label><input id="mtEnd" type="time" value="${esc(x.end_time||"")}"></div>
+   <div class="field"><label>Técnico responsável</label><input id="mtTechnician" value="${esc(x.technician||"")}"></div>
+   <div class="field"><label>Acompanhante / cliente</label><input id="mtCompanion" value="${esc(d.companion||"")}"></div>
+  </div></div>
+
+  <div class="maint-form-section"><h3>3. Atendimento</h3><div class="form-grid">
+   <div class="field"><label>Tipo</label><select id="mtType">${["Garantia","Manutenção preventiva","Manutenção corretiva","Assistência técnica","Ajuste / Revisão","Vistoria","Outro"].map(v=>`<option ${x.service_type===v?"selected":""}>${v}</option>`).join("")}</select></div>
+   <div class="field"><label>Prioridade</label><select id="mtPriority">${["Baixa","Normal","Alta","Urgente"].map(v=>`<option ${x.priority===v?"selected":""}>${v}</option>`).join("")}</select></div>
+   <div class="field"><label>Status</label><select id="mtStatus">${["Agendada","Confirmada","Em atendimento","Aguardando peça","Retorno necessário","Concluída","Cancelada"].map(v=>`<option ${x.status===v?"selected":""}>${v}</option>`).join("")}</select></div>
+   <div class="field"><label>Valor / custo</label><input id="mtCost" type="number" min="0" step=".01" value="${Number(x.cost||0)}"></div>
+   <div class="field full"><label>Solicitação do cliente *</label><textarea id="mtDescription" rows="4">${esc(x.description||"")}</textarea></div>
+   <div class="field full"><label>Diagnóstico técnico / causa</label><textarea id="mtDiagnosis" rows="3">${esc(x.diagnosis||"")}</textarea></div>
+  </div></div>
+
+  <div class="maint-form-section"><h3>4. Serviços executados</h3>
+   <div id="mtServices">${services.map((s,i)=>maintenanceServiceRow(s,i)).join("")}</div>
+   <button type="button" class="btn sm" onclick="maintenanceAddService()">+ Adicionar serviço</button>
+  </div>
+
+  <div class="maint-form-section"><h3>5. Materiais utilizados</h3>
+   <div id="mtMaterials">${materials.map((m,i)=>maintenanceMaterialRow(m,i)).join("")}</div>
+   <button type="button" class="btn sm" onclick="maintenanceAddMaterial()">+ Adicionar material</button>
+  </div>
+
+  <div class="maint-form-section"><h3>6. Registro fotográfico</h3><div class="maint-photo-grid">
+   <label class="maint-upload"><input id="mtBefore" type="file" accept="image/*" multiple onchange="maintenanceSelectPhotos(this,'before')"><b>📷 Antes do serviço</b><span id="mtBeforeLabel">${photosBefore.length?photosBefore.length+" foto(s) já salvas":"Adicionar fotos"}</span></label>
+   <label class="maint-upload"><input id="mtAfter" type="file" accept="image/*" multiple onchange="maintenanceSelectPhotos(this,'after')"><b>📷 Depois do serviço</b><span id="mtAfterLabel">${photosAfter.length?photosAfter.length+" foto(s) já salvas":"Adicionar fotos"}</span></label>
+  </div></div>
+
+  <div class="maint-form-section"><h3>7. Conclusão e aceite</h3><div class="form-grid">
+   <div class="field full"><label>Observações finais</label><textarea id="mtNotes" rows="3">${esc(d.notes||"")}</textarea></div>
+   <div class="field"><label>Avaliação do cliente</label><select id="mtRating"><option value="">Não avaliado</option>${[5,4,3,2,1].map(v=>`<option value="${v}" ${Number(d.rating||0)===v?"selected":""}>${"★".repeat(v)}${"☆".repeat(5-v)}</option>`).join("")}</select></div>
+   <div class="field"><label>Retorno necessário?</label><select id="mtReturn"><option value="false" ${!d.return_required?"selected":""}>Não</option><option value="true" ${d.return_required?"selected":""}>Sim</option></select></div>
+   <div class="field"><label>Nome para aceite do cliente</label><input id="mtClientAccept" value="${esc(d.client_accept_name||"")}"></div>
+   <div class="field"><label>Responsável técnico</label><input id="mtTechAccept" value="${esc(d.technician_accept_name||x.technician||"")}"></div>
+  </div></div>
+ </div>`;
+}
+function maintenanceServiceRow(s={},i=Date.now()){
+ return `<div class="maint-line" data-service-row><input placeholder="Serviço executado" value="${esc(s.description||"")}"><input type="number" min="1" step="1" value="${Number(s.qty||1)}"><label><input type="checkbox" ${s.done!==false?"checked":""}> Concluído</label><button type="button" class="btn sm danger" onclick="this.parentElement.remove()">×</button></div>`
+}
+function maintenanceMaterialRow(m={},i=Date.now()){
+ return `<div class="maint-line material" data-material-row><input placeholder="Código" value="${esc(m.code||"")}"><input placeholder="Material" value="${esc(m.description||"")}"><input type="number" min="0" step=".01" value="${Number(m.qty||1)}"><input placeholder="Un." value="${esc(m.unit||"un")}"><button type="button" class="btn sm danger" onclick="this.parentElement.remove()">×</button></div>`
+}
+function maintenanceAddService(){document.getElementById("mtServices").insertAdjacentHTML("beforeend",maintenanceServiceRow())}
+function maintenanceAddMaterial(){document.getElementById("mtMaterials").insertAdjacentHTML("beforeend",maintenanceMaterialRow())}
+function maintenanceSelectPhotos(input,type){
+ const files=[...(input.files||[])];
+ if(type==="before"){maintenancePhotoBeforeFiles=files;document.getElementById("mtBeforeLabel").textContent=files.length+" foto(s) selecionadas"}
+ else{maintenancePhotoAfterFiles=files;document.getElementById("mtAfterLabel").textContent=files.length+" foto(s) selecionadas"}
+}
+async function maintenanceUploadFiles(files,folder){
+ const paths=[];
+ for(const f of files){
+  if(f.size>12*1024*1024)throw new Error(`Arquivo ${f.name} excede 12 MB`);
+  const ext=(f.name.split(".").pop()||"jpg").toLowerCase();
+  const path=`${profile.company_id}/${folder}/${crypto.randomUUID()}.${ext}`;
+  const {error}=await sb.storage.from("maintenance-photos").upload(path,f,{contentType:f.type||"image/jpeg",upsert:false});
+  if(error)throw error;
+  paths.push(path)
+ }
+ return paths
+}
+function maintenanceCollectServices(){
+ return [...document.querySelectorAll("[data-service-row]")].map(r=>{
+  const i=r.querySelectorAll("input");return{description:i[0].value.trim(),qty:Number(i[1].value||1),done:i[2].checked}
+ }).filter(x=>x.description)
+}
+function maintenanceCollectMaterials(){
+ return [...document.querySelectorAll("[data-material-row]")].map(r=>{
+  const i=r.querySelectorAll("input");return{code:i[0].value.trim(),description:i[1].value.trim(),qty:Number(i[2].value||0),unit:i[3].value.trim()||"un"}
+ }).filter(x=>x.description)
+}
+async function addMaintenance(){
+ if(!cache.clients.length)return toast("Cadastre um cliente antes de agendar manutenção");
+ openModal("Agendar Manutenção / Assistência",maintenanceForm(),`saveMaintenance()`);
+}
+async function editMaintenance(id){
+ const x=maintenanceById(id);if(!x)return;
+ openModal(`Editar ${maintenanceOs(x)}`,maintenanceForm(x),`saveMaintenance('${id}')`);
+}
+async function saveMaintenance(id=""){
+ const client_id=document.getElementById("mtClient").value;
+ const scheduled_date=document.getElementById("mtDate").value;
+ const description=document.getElementById("mtDescription").value.trim();
+ if(!client_id||!scheduled_date||!description)return toast("Preencha cliente, data e solicitação");
+ const old=id?maintenanceById(id):null,d=maintenanceData(old);
+ try{
+  const newBefore=await maintenanceUploadFiles(maintenancePhotoBeforeFiles,`before/${id||"new"}`);
+  const newAfter=await maintenanceUploadFiles(maintenancePhotoAfterFiles,`after/${id||"new"}`);
+  const status=document.getElementById("mtStatus").value;
+  const data={
+   ...d,
+   environment:document.getElementById("mtEnvironment").value.trim(),
+   period:document.getElementById("mtPeriod").value,
+   companion:document.getElementById("mtCompanion").value.trim(),
+   services:maintenanceCollectServices(),
+   materials:maintenanceCollectMaterials(),
+   photos_before:[...(d.photos_before||[]),...newBefore],
+   photos_after:[...(d.photos_after||[]),...newAfter],
+   notes:document.getElementById("mtNotes").value.trim(),
+   rating:Number(document.getElementById("mtRating").value||0)||null,
+   return_required:document.getElementById("mtReturn").value==="true",
+   client_accept_name:document.getElementById("mtClientAccept").value.trim(),
+   technician_accept_name:document.getElementById("mtTechAccept").value.trim()
+  };
+  const payload={
+   company_id:profile.company_id,
+   client_id,
+   proposal_id:document.getElementById("mtProposal").value||null,
+   service_type:document.getElementById("mtType").value,
+   priority:document.getElementById("mtPriority").value,
+   status,
+   scheduled_date,
+   start_time:document.getElementById("mtStart").value||null,
+   end_time:document.getElementById("mtEnd").value||null,
+   technician:document.getElementById("mtTechnician").value.trim()||null,
+   address:document.getElementById("mtAddress").value.trim()||null,
+   description,
+   diagnosis:document.getElementById("mtDiagnosis").value.trim()||null,
+   cost:Number(document.getElementById("mtCost").value||0),
+   completed_at:status==="Concluída"?(old?.completed_at||new Date().toISOString()):null,
+   data
+  };
+  const r=id?await sb.from("maintenance_orders").update(payload).eq("id",id):await sb.from("maintenance_orders").insert(payload);
+  if(r.error)return toast("Erro: "+r.error.message);
+  await loadMaintenanceOrders(true);
+  closeModal();posvendaTab="manutencao";render();
+  toast(id?"Ordem de serviço atualizada":"Manutenção agendada e OS criada")
+ }catch(err){console.error(err);toast("Erro: "+(err?.message||err))}
+}
+async function deleteMaintenance(id){
+ const x=maintenanceById(id);if(!x||!confirm(`Excluir ${maintenanceOs(x)}? Esta ação não pode ser desfeita.`))return;
+ const d=maintenanceData(x),paths=[...(d.photos_before||[]),...(d.photos_after||[])].filter(Boolean);
+ if(paths.length)await sb.storage.from("maintenance-photos").remove(paths);
+ const {error}=await sb.from("maintenance_orders").delete().eq("id",id);
+ if(error)return toast("Erro: "+error.message);
+ await loadMaintenanceOrders(true);render();toast("Ordem de serviço excluída")
+}
+async function maintenancePhotoUrl(path){
+ const {data,error}=await sb.storage.from("maintenance-photos").createSignedUrl(path,120);
+ if(error)return null;return data.signedUrl
+}
+async function viewMaintenance(id){
+ const x=maintenanceById(id);if(!x)return;
+ const c=maintenanceClient(x.client_id),p=maintenanceProposal(x.proposal_id),d=maintenanceData(x);
+ const before=(d.photos_before||[]),after=(d.photos_after||[]);
+ openModal(`${maintenanceOs(x)} • ${esc(c?.name||"Cliente")}`,`<div class="maint-detail">
+  <div class="maint-hero"><div><span class="badge ${maintenanceStatusClass(x.status)}">${esc(x.status||"Agendada")}</span><h2>Manutenção / Assistência Técnica</h2><p>${esc(x.service_type||"")} • Prioridade ${esc(x.priority||"Normal")}</p></div><div class="maint-os"><span>ORDEM DE SERVIÇO</span><b>${maintenanceOs(x)}</b></div></div>
+  <div class="detail-grid">
+   <div><label>Cliente</label><b>${esc(c?.name||"—")}</b></div><div><label>Projeto</label><b>${esc(p?.title||p?.number||"—")}</b></div>
+   <div><label>Data</label><b>${maintenanceDate(x.scheduled_date)}</b></div><div><label>Horário</label><b>${esc([x.start_time,x.end_time].filter(Boolean).join(" às ")||d.period||"—")}</b></div>
+   <div><label>Técnico</label><b>${esc(x.technician||"—")}</b></div><div><label>Ambiente</label><b>${esc(d.environment||"—")}</b></div>
+   <div><label>Valor / custo</label><b class="goldtxt">${money(x.cost)}</b></div><div><label>Retorno</label><b>${d.return_required?"Necessário":"Não"}</b></div>
+  </div>
+  <div class="detail-notes"><label>Solicitação</label><p>${esc(x.description||"—")}</p></div>
+  <div class="detail-notes"><label>Diagnóstico técnico</label><p>${esc(x.diagnosis||"—")}</p></div>
+  <div class="maint-summary-grid">
+   <div><h4>Serviços</h4>${(d.services||[]).map(s=>`<p>${s.done?"✓":"○"} ${esc(s.description)} • ${s.qty||1}x</p>`).join("")||"<p>—</p>"}</div>
+   <div><h4>Materiais</h4>${(d.materials||[]).map(m=>`<p>${esc(m.code||"")} ${esc(m.description)} • ${m.qty||0} ${esc(m.unit||"un")}</p>`).join("")||"<p>—</p>"}</div>
+  </div>
+  <div class="maint-photo-summary"><span>📷 Antes: ${before.length}</span><span>📷 Depois: ${after.length}</span><span>⭐ Avaliação: ${d.rating?d.rating+"/5":"—"}</span></div>
+  <div class="client-quick"><button class="btn gold" onclick="maintenancePrint('${id}')">Imprimir / PDF OS</button><button class="btn" onclick="closeModal();editMaintenance('${id}')">Editar</button>${c?`<button class="btn" onclick="closeModal();viewClient('${c.id}')">Cliente</button>`:""}</div>
+ </div>`,"");
+ modal.classList.add("proposal-modal")
+}
+async function maintenancePrint(id){
+ const x=maintenanceById(id);if(!x)return;
+ const c=maintenanceClient(x.client_id),p=maintenanceProposal(x.proposal_id),d=maintenanceData(x);
+ const before=await Promise.all((d.photos_before||[]).slice(0,3).map(maintenancePhotoUrl));
+ const after=await Promise.all((d.photos_after||[]).slice(0,3).map(maintenancePhotoUrl));
+ const photoBlock=(title,arr)=>`<section><h3>${title}</h3><div class="photos">${arr.filter(Boolean).map(u=>`<img src="${u}">`).join("")||"<em>Sem fotos</em>"}</div></section>`;
+ const w=window.open("","_blank");
+ w.document.write(`<html><head><title>${maintenanceOs(x)} • ${esc(c?.name||"Cliente")}</title><style>
+  @page{size:A4;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#171717;margin:0;font-size:10px}.top{background:#111;color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center}.brand{font-size:24px;font-weight:900;letter-spacing:2px}.brand small{display:block;font-size:8px;color:#d3a849;letter-spacing:1px}.os{text-align:right}.os b{display:block;font-size:20px;color:#e0b35b}.title{padding:14px 0 8px;border-bottom:2px solid #b68a3b}.title h1{margin:0;font-size:22px}.title p{margin:3px 0 0;color:#666}.grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #bbb;border-bottom:0;margin-top:10px}.cell{padding:7px;border-right:1px solid #bbb;border-bottom:1px solid #bbb;min-height:40px}.cell:nth-child(4n){border-right:0}.cell.w2{grid-column:span 2}.cell.w4{grid-column:span 4}.cell span{display:block;font-size:7px;color:#666;text-transform:uppercase}.cell b{font-size:10px}.section{margin-top:9px;border:1px solid #bbb}.section h3,section h3{margin:0;padding:6px 8px;background:#2a2722;color:#fff;font-size:10px;text-transform:uppercase}.section .body{padding:8px;min-height:44px}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid #bbb;padding:5px;text-align:left}.table th{background:#eee}.photos{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:6px;border:1px solid #bbb}.photos img{width:100%;height:100px;object-fit:cover}.sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:24px}.sig{border-top:1px solid #333;text-align:center;padding-top:4px}.footer{margin-top:18px;border-top:2px solid #b68a3b;padding-top:7px;display:flex;justify-content:space-between;color:#666}
+ </style></head><body>
+ <div class="top"><div class="brand">VIMAK<small>PLANEJADOS • PÓS-VENDA</small></div><div class="os"><span>ORDEM DE SERVIÇO</span><b>${maintenanceOs(x)}</b></div></div>
+ <div class="title"><h1>Manutenção e Assistência Técnica</h1><p>${esc(x.service_type||"")} • ${esc(x.priority||"Normal")} • ${esc(x.status||"")}</p></div>
+ <div class="grid">
+  <div class="cell w2"><span>Cliente</span><b>${esc(c?.name||"—")}</b></div><div class="cell"><span>Telefone</span><b>${esc(c?.whatsapp||c?.phone||"—")}</b></div><div class="cell"><span>E-mail</span><b>${esc(c?.email||"—")}</b></div>
+  <div class="cell w4"><span>Endereço</span><b>${esc(x.address||"—")}</b></div>
+  <div class="cell"><span>Projeto</span><b>${esc(p?.title||p?.number||"—")}</b></div><div class="cell"><span>Ambiente</span><b>${esc(d.environment||"—")}</b></div><div class="cell"><span>Data</span><b>${maintenanceDate(x.scheduled_date)}</b></div><div class="cell"><span>Horário</span><b>${esc([x.start_time,x.end_time].filter(Boolean).join(" às ")||d.period||"—")}</b></div>
+  <div class="cell w2"><span>Técnico responsável</span><b>${esc(x.technician||"—")}</b></div><div class="cell w2"><span>Acompanhante</span><b>${esc(d.companion||"—")}</b></div>
+ </div>
+ <div class="section"><h3>Solicitação do cliente</h3><div class="body">${esc(x.description||"—")}</div></div>
+ <div class="section"><h3>Diagnóstico técnico / causa</h3><div class="body">${esc(x.diagnosis||"—")}</div></div>
+ <div class="two"><div class="section"><h3>Serviços executados</h3><table class="table"><tr><th>Serviço</th><th>Qtd.</th><th>OK</th></tr>${(d.services||[]).map(s=>`<tr><td>${esc(s.description)}</td><td>${s.qty||1}</td><td>${s.done?"✓":"○"}</td></tr>`).join("")}</table></div>
+ <div class="section"><h3>Materiais utilizados</h3><table class="table"><tr><th>Cód.</th><th>Material</th><th>Qtd.</th></tr>${(d.materials||[]).map(m=>`<tr><td>${esc(m.code||"")}</td><td>${esc(m.description)}</td><td>${m.qty||0} ${esc(m.unit||"un")}</td></tr>`).join("")}</table></div></div>
+ <div class="two">${photoBlock("Registro fotográfico • Antes",before)}${photoBlock("Registro fotográfico • Depois",after)}</div>
+ <div class="section"><h3>Observações / Conclusão</h3><div class="body">${esc(d.notes||"—")}<br><br><b>Avaliação:</b> ${d.rating?d.rating+"/5":"—"} • <b>Retorno necessário:</b> ${d.return_required?"Sim":"Não"} • <b>Valor:</b> ${money(x.cost)}</div></div>
+ <div class="sign"><div class="sig">${esc(d.client_accept_name||c?.name||"Cliente")}<br><small>Assinatura / aceite do cliente</small></div><div class="sig">${esc(d.technician_accept_name||x.technician||"Técnico")}<br><small>Responsável técnico</small></div></div>
+ <div class="footer"><span>${esc(company?.name||"VIMAK Planejados")}</span><span>Nosso compromisso não termina na entrega.</span></div>
+ <script>window.onload=()=>setTimeout(()=>window.print(),350)<\/script></body></html>`);
+ w.document.close()
+}
 function afterSaleById(id){return cache.afterSales.find(x=>x.id===id)}
 function afterSaleClient(id){return cache.clients.find(x=>x.id===id)}
 function afterSaleProposal(id){return cache.proposals.find(x=>x.id===id)}
@@ -1197,33 +1444,36 @@ function afterSaleForm(x={}){
  </div>`;
 }
 function posvenda(){
+ maintenanceEnsureLoaded();
  const abertos=cache.afterSales.filter(x=>["Aberto","Em atendimento","Aguardando cliente","Aguardando peça","Agendado"].includes(x.status)).length;
  const urgentes=cache.afterSales.filter(x=>x.priority==="Urgente"&&x.status!=="Concluído"&&x.status!=="Cancelado").length;
  const concluidos=cache.afterSales.filter(x=>x.status==="Concluído").length;
  const custo=cache.afterSales.reduce((a,x)=>a+Number(x.cost||0),0);
  const rows=cache.afterSales.map(x=>{
-   const c=afterSaleClient(x.client_id);
-   const opened=x.opened_at?new Date(x.opened_at).toLocaleDateString("pt-BR"):"—";
-   return `<tr>
-     <td><button class="link-client" onclick="viewAfterSale('${x.id}')"><b>${esc(c?.name||"Cliente não vinculado")}</b></button><small>${opened}</small></td>
-     <td>${esc(x.service_type||"—")}</td>
-     <td>${esc(x.description||"")}</td>
-     <td><span class="badge ${afterSaleStatusClass(x.status)}">${esc(x.status||"Aberto")}</span></td>
-     <td><span class="badge">${esc(x.priority||"Normal")}</span></td>
-     <td>${money(x.cost)}</td>
-     <td><div class="row-actions"><button class="btn sm" onclick="viewAfterSale('${x.id}')">Ver</button><button class="btn sm" onclick="editAfterSale('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteAfterSale('${x.id}')">Excluir</button></div></td>
-   </tr>`;
+   const c=afterSaleClient(x.client_id),opened=x.opened_at?new Date(x.opened_at).toLocaleDateString("pt-BR"):"—";
+   return `<tr><td><button class="link-client" onclick="viewAfterSale('${x.id}')"><b>${esc(c?.name||"Cliente não vinculado")}</b></button><small>${opened}</small></td><td>${esc(x.service_type||"—")}</td><td>${esc(x.description||"")}</td><td><span class="badge ${afterSaleStatusClass(x.status)}">${esc(x.status||"Aberto")}</span></td><td><span class="badge">${esc(x.priority||"Normal")}</span></td><td>${money(x.cost)}</td><td><div class="row-actions"><button class="btn sm" onclick="viewAfterSale('${x.id}')">Ver</button><button class="btn sm" onclick="editAfterSale('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteAfterSale('${x.id}')">Excluir</button></div></td></tr>`
  }).join("");
- return shell("Pós-venda / Garantia","Central de assistência, garantia e relacionamento após a entrega",
- `<button class="btn gold" onclick="addAfterSale()">+ Novo Chamado</button>`,
- `<div class="grid g4 client-kpis">
-   <div class="card kpi"><label>Chamados em aberto</label><strong class="goldtxt">${abertos}</strong></div>
-   <div class="card kpi"><label>Urgentes</label><strong>${urgentes}</strong></div>
-   <div class="card kpi"><label>Concluídos</label><strong>${concluidos}</strong></div>
-   <div class="card kpi"><label>Custo acumulado</label><strong>${money(custo)}</strong></div>
- </div>
- <div class="filters"><div class="field"><label>Buscar chamado</label><input placeholder="Cliente, serviço, status, descrição..." oninput="filterTable(this.value)"></div></div>
- <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Cliente</th><th>Serviço</th><th>Descrição</th><th>Status</th><th>Prioridade</th><th>Custo</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="7">Nenhum chamado de pós-venda cadastrado.</td></tr>`}</tbody></table></div></div>`);
+
+ const today=new Date().toISOString().slice(0,10);
+ const scheduled=maintenanceOrders.filter(x=>["Agendada","Confirmada"].includes(x.status)).length;
+ const todayCount=maintenanceOrders.filter(x=>x.scheduled_date===today&&!["Cancelada","Concluída"].includes(x.status)).length;
+ const returns=maintenanceOrders.filter(x=>maintenanceData(x).return_required&&x.status!=="Concluída").length;
+ const mRows=maintenanceOrders.map(x=>{
+  const c=maintenanceClient(x.client_id),d=maintenanceData(x);
+  return `<tr><td><button class="link-client" onclick="viewMaintenance('${x.id}')"><b>${maintenanceOs(x)}</b></button><small>${maintenanceDate(x.scheduled_date)}</small></td><td><b>${esc(c?.name||"—")}</b><small>${esc(d.environment||"")}</small></td><td>${esc(x.service_type||"—")}</td><td>${esc(x.technician||"—")}</td><td><span class="badge ${maintenanceStatusClass(x.status)}">${esc(x.status||"Agendada")}</span></td><td>${money(x.cost)}</td><td><div class="row-actions"><button class="btn sm" onclick="viewMaintenance('${x.id}')">OS</button><button class="btn sm" onclick="editMaintenance('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteMaintenance('${x.id}')">Excluir</button></div></td></tr>`
+ }).join("");
+
+ const body=posvendaTab==="chamados"?`
+  <div class="grid g4 client-kpis"><div class="card kpi"><label>Chamados em aberto</label><strong class="goldtxt">${abertos}</strong></div><div class="card kpi"><label>Urgentes</label><strong>${urgentes}</strong></div><div class="card kpi"><label>Concluídos</label><strong>${concluidos}</strong></div><div class="card kpi"><label>Custo acumulado</label><strong>${money(custo)}</strong></div></div>
+  <div class="filters"><div class="field"><label>Buscar chamado</label><input placeholder="Cliente, serviço, status, descrição..." oninput="filterTable(this.value)"></div></div>
+  <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Cliente</th><th>Serviço</th><th>Descrição</th><th>Status</th><th>Prioridade</th><th>Custo</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="7">Nenhum chamado de pós-venda cadastrado.</td></tr>`}</tbody></table></div></div>`:
+  `<div class="grid g4 client-kpis"><div class="card kpi"><label>OS cadastradas</label><strong class="goldtxt">${maintenanceOrders.length}</strong></div><div class="card kpi"><label>Agendadas</label><strong>${scheduled}</strong></div><div class="card kpi"><label>Atendimentos hoje</label><strong>${todayCount}</strong></div><div class="card kpi"><label>Retornos necessários</label><strong>${returns}</strong></div></div>
+  <div class="maint-banner"><div><span>MANUTENÇÃO & ASSISTÊNCIA</span><h3>Agenda técnica + Ordem de Serviço completa</h3><p>Agendamento, diagnóstico, materiais, fotos antes/depois, avaliação, aceite e impressão profissional.</p></div><button class="btn gold" onclick="addMaintenance()">+ Agendar manutenção</button></div>
+  <div class="filters"><div class="field"><label>Buscar OS</label><input placeholder="OS, cliente, técnico, status..." oninput="filterTable(this.value)"></div></div>
+  <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>OS / Data</th><th>Cliente</th><th>Tipo</th><th>Técnico</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="rows">${mRows||`<tr><td class="empty" colspan="7">${maintenanceLoading?"Carregando ordens de serviço...":"Nenhuma manutenção cadastrada."}</td></tr>`}</tbody></table></div></div>`;
+ return shell("Pós-venda / Garantia","Central de assistência, garantia, manutenção e relacionamento após a entrega",
+ `<button class="btn ${posvendaTab==="chamados"?"gold":""}" onclick="posvendaTab='chamados';render()">Chamados / Garantia</button><button class="btn ${posvendaTab==="manutencao"?"gold":""}" onclick="posvendaTab='manutencao';render()">Manutenção / OS</button>${posvendaTab==="chamados"?`<button class="btn gold" onclick="addAfterSale()">+ Novo Chamado</button>`:`<button class="btn gold" onclick="addMaintenance()">+ Agendar Manutenção</button>`}`,
+ body);
 }
 function addAfterSale(){
  if(!cache.clients.length)return toast("Cadastre um cliente antes de abrir um chamado");

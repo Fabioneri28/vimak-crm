@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-10-excluir-leads';
+const CACHE = 'vimak-crm-v6-24-11-posvenda-manutencao';
 
 const ASSETS = [
   './',
