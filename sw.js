@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-12-1-tela-os-ampliada';
+const CACHE = 'vimak-crm-v6-24-13-finance-intelligence';
 
 const ASSETS = [
   './',
