@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-13-1-fontes-ampliadas';
+const CACHE = 'vimak-crm-v6-24-13-2-upload-anexos';
 
 const ASSETS = [
   './',

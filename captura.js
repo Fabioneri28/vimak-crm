@@ -60,15 +60,33 @@ function renderSummary(){
  const s=scoreLead();
  $("summary").innerHTML=`<b>Resumo</b><br>${[...selectedEnvs].join(" • ")}<br>Prazo: ${deadline}<br>Faixa indicada: R$ ${Number(investment).toLocaleString("pt-BR")}<br>Classificação automática: ${classification(s)}`
 }
+const ATTACHMENT_TYPES={
+ "jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp",
+ "heic":"image/heic","heif":"image/heif","pdf":"application/pdf",
+ "txt":"text/plain","csv":"text/csv",
+ "doc":"application/msword","docx":"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+ "xls":"application/vnd.ms-excel","xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+ "dwg":"application/acad","dxf":"application/dxf","zip":"application/zip"
+};
 async function uploadAttachment(){
  const f=$("attachment").files?.[0];
  if(!f)return null;
- if(f.size>10*1024*1024)throw new Error("O anexo deve ter no máximo 10 MB.");
- const ext=(f.name.split(".").pop()||"bin").toLowerCase();
+ const max=20*1024*1024;
+ if(f.size>max)throw new Error("Arquivo acima de 20 MB. Reduza o tamanho e tente novamente.");
+ const ext=(f.name.split(".").pop()||"").toLowerCase();
+ if(!ATTACHMENT_TYPES[ext])throw new Error("Formato não permitido. Use JPG, JPEG, PNG, WEBP, HEIC, PDF, TXT, CSV, Word, Excel, DWG, DXF ou ZIP.");
+ const contentType=f.type||ATTACHMENT_TYPES[ext]||"application/octet-stream";
  const path=`${COMPANY_ID}/${new Date().toISOString().slice(0,10)}/${crypto.randomUUID()}.${ext}`;
- const {error}=await sbLead.storage.from("lead-attachments").upload(path,f,{contentType:f.type||"application/octet-stream",upsert:false});
- if(error)throw error;
- return path
+ const {data,error}=await sbLead.storage.from("lead-attachments").upload(path,f,{
+   contentType,
+   cacheControl:"3600",
+   upsert:false
+ });
+ if(error){
+   console.error("Falha Storage lead-attachments:",error);
+   throw new Error("Não foi possível enviar o anexo: "+(error.message||"erro no armazenamento."));
+ }
+ return data?.path||path
 }
 $("leadForm").onsubmit=async e=>{
  e.preventDefault();
@@ -112,7 +130,7 @@ $("leadForm").onsubmit=async e=>{
 
   $("leadForm").hidden=true;$("success").hidden=false
  }catch(err){
-  console.error(err);$("formError").textContent="Não foi possível enviar agora. Tente novamente em instantes.";
+  console.error(err);$("formError").textContent=err?.message||"Não foi possível enviar agora. Tente novamente em instantes.";
   btn.disabled=false;btn.textContent="Enviar solicitação"
  }
 };
