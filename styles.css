@@ -452,3 +452,9 @@ textarea{
 .leo-schema{padding:12px;border:1px dashed #444;border-radius:8px;color:#aaa;font-size:11px;overflow:auto}.leo-schema code{display:block;margin-top:6px;color:#d7b36a;white-space:nowrap}
 .leo-upload{margin-top:15px}.leo-quick-status{padding:14px;text-align:center;color:#aaa}
 @media(max-width:900px){.leo-grid{grid-template-columns:1fr}.leo-actions{flex-wrap:wrap}.leo-hero{align-items:flex-start}.leo-count{min-width:70px}}
+
+/* V6.24.13.6 — Conversor Promob → Cortecloud */
+.cc-hero{border-color:rgba(70,150,205,.42);background:linear-gradient(135deg,#14212b,#101519)}
+.cc-hero span{color:#5fb7e8}
+.cc-converter .leo-schema code{color:#69bce9}
+.cc-mini{min-width:70px!important;width:70px}
