@@ -428,3 +428,7 @@ textarea{
     line-height:1.4;
   }
 }
+
+/* V6.24.13.3 — Plano de Corte + Etiquetas preservadas */
+.cut-export-bar .btn.gold{font-weight:800}
+.row-actions .btn{white-space:nowrap}

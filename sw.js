@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-13-2-upload-anexos';
+const CACHE = 'vimak-crm-v6-24-13-3-plano-corte-etiquetas';
 
 const ASSETS = [
   './',
