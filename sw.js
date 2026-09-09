@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-13-4-plano-corte-impressao-pro';
+const CACHE = 'vimak-crm-v6-24-13-5-conversor-leoplan';
 
 const ASSETS = [
   './',
