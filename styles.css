@@ -432,3 +432,7 @@ textarea{
 /* V6.24.13.3 — Plano de Corte + Etiquetas preservadas */
 .cut-export-bar .btn.gold{font-weight:800}
 .row-actions .btn{white-space:nowrap}
+
+/* V6.24.13.4 — Plano de Corte impressão PRO */
+.cut-export-bar .btn.gold{box-shadow:0 0 0 1px rgba(201,151,63,.28),0 8px 22px rgba(0,0,0,.16)}
+.cut-view .client-quick .btn.gold{font-weight:800}
