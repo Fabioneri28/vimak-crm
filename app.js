@@ -886,7 +886,7 @@ function propostas(){
     <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Nº</th><th>Proposta / Cliente</th><th>Ambientes</th><th>Status</th><th>Valor final</th><th>Validade</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="7">Nenhuma proposta cadastrada. Clique em + Nova Proposta.</td></tr>`}</tbody></table></div></div>`);
 }
 
-let pdfBudgetState={fileName:'',pages:[],environments:[],rawText:'',clientId:'',projectName:''};
+let pdfBudgetState={fileName:'',pages:[],environments:[],rawText:'',clientId:'',projectName:'',pricing:{white:1450,wood:1750,color:1950,premium:1.15}};
 function pdfBudgetNormalize(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim()}
 function pdfBudgetEnvName(s){
  const n=pdfBudgetNormalize(s);
@@ -911,13 +911,47 @@ function pdfBudgetAnalyzePages(pages){
   chunks.forEach(ch=>{const env=pdfBudgetEnvName(ch);if(!env)return;let x=known.find(z=>z.name===env);if(!x){x={name:env,pages:[],text:'',features:[],dimensions:[],confidence:0,price:0,include:true};known.push(x)}if(!x.pages.includes(pg.page))x.pages.push(pg.page);x.text+=' '+ch.slice(0,5000)})
  });
  if(!known.length){const all=pages.map(x=>x.text).join(' ');known.push({name:'Projeto / Marcenaria',pages:pages.map(x=>x.page),text:all,features:[],dimensions:[],confidence:0,price:0,include:true})}
- known.forEach(x=>{x.features=pdfBudgetFeatures(x.text);x.dimensions=pdfBudgetDimensions(x.text);x.confidence=pdfBudgetConfidence(x.text,x.features,x.dimensions)});return known
+ known.forEach(x=>{x.features=pdfBudgetFeatures(x.text);x.dimensions=pdfBudgetDimensions(x.text);x.confidence=pdfBudgetConfidence(x.text,x.features,x.dimensions);pdfBudgetInitMetrics(x)});return known
 }
+function pdfBudgetM2Candidate(x){
+ const pair=(x.dimensions||[]).find(v=>v.includes('×'));
+ if(!pair)return {w:0,h:0,m2:0,source:'manual'};
+ const nums=pair.match(/[0-9]+(?:\.[0-9]+)?/g)||[];if(nums.length<2)return {w:0,h:0,m2:0,source:'manual'};
+ let w=Number(nums[0]),h=Number(nums[1]);if(/mm/i.test(pair)){w/=1000;h/=1000}
+ if(w<=0||h<=0||w>15||h>6)return {w:0,h:0,m2:0,source:'manual'};
+ return {w,h,m2:Number((w*h).toFixed(2)),source:'pdf'}
+}
+function pdfBudgetMaterialClass(x){
+ const n=pdfBudgetNormalize((x.features||[]).join(' ')+' '+(x.text||''));
+ if(n.includes('AMADEIR'))return 'wood';if(n.includes('COLORID')||n.includes('VERDE')||n.includes('AZUL'))return 'color';return 'white'
+}
+function pdfBudgetComplexity(x){
+ const n=pdfBudgetNormalize((x.features||[]).join(' '));let score=0;
+ ['VIDRO','LED','RIPAD','LACA','INVISIV','GAVETA','GAVETAO','AMORTECID'].forEach(k=>{if(n.includes(k))score++});
+ return score>=5?'Premium':score>=2?'Intermediária':'Simples'
+}
+function pdfBudgetCalcPrice(x){
+ const m2=Number(x.m2||0),cfg=pdfBudgetState.pricing||{},cls=x.materialClass||pdfBudgetMaterialClass(x);
+ const base=Number(cls==='wood'?cfg.wood:cls==='color'?cfg.color:cfg.white)||0;
+ const factor=(x.complexity||pdfBudgetComplexity(x))==='Premium'?Number(cfg.premium||1.15):1;
+ return Math.round(m2*base*factor)
+}
+function pdfBudgetInitMetrics(x){
+ const c=pdfBudgetM2Candidate(x);x.width=Number(x.width||c.w||0);x.height=Number(x.height||c.h||0);x.m2=Number(x.m2||c.m2||0);x.m2Source=x.m2Source||c.source;x.materialClass=x.materialClass||pdfBudgetMaterialClass(x);x.complexity=x.complexity||pdfBudgetComplexity(x);x.price=Number(x.price||pdfBudgetCalcPrice(x)||0);return x
+}
+function pdfBudgetRecalc(i){const x=pdfBudgetState.environments[i];x.m2=Number((Number(x.width||0)*Number(x.height||0)).toFixed(2));x.m2Source='manual';x.price=pdfBudgetCalcPrice(x);render()}
+function pdfBudgetSetMaterial(i,v){const x=pdfBudgetState.environments[i];x.materialClass=v;x.price=pdfBudgetCalcPrice(x);render()}
+function pdfBudgetSetComplexity(i,v){const x=pdfBudgetState.environments[i];x.complexity=v;x.price=pdfBudgetCalcPrice(x);render()}
+function pdfBudgetPricingOpen(){
+ const c=pdfBudgetState.pricing;
+ openModal('Tabela rápida de preço por m²',`<div class="pdf-price-config"><p>Valores de referência desta análise. Ajuste para a realidade da VIMAK antes de gerar a proposta.</p><div class="pdf-price-grid"><div class="field"><label>MDF branco / m²</label><input id="pWhite" type="number" value="${c.white}"></div><div class="field"><label>MDF madeirado / m²</label><input id="pWood" type="number" value="${c.wood}"></div><div class="field"><label>MDF colorido / m²</label><input id="pColor" type="number" value="${c.color}"></div><div class="field"><label>Fator Premium</label><input id="pPremium" type="number" step="0.01" value="${c.premium}"></div></div><div class="leo-actions"><button class="btn gold" onclick="pdfBudgetPricingSave()">Aplicar e recalcular</button></div></div>`,'')
+}
+function pdfBudgetPricingSave(){pdfBudgetState.pricing={white:Number(document.getElementById('pWhite').value||0),wood:Number(document.getElementById('pWood').value||0),color:Number(document.getElementById('pColor').value||0),premium:Number(document.getElementById('pPremium').value||1.15)};pdfBudgetState.environments.forEach(x=>x.price=pdfBudgetCalcPrice(x));closeModal();render();toast('Tabela aplicada à análise')}
 function pdfBudgetStatus(x){if(x.confidence>=75)return ['🟢','Alta leitura','ok'];if(x.confidence>=50)return ['🟡','Conferir','warn'];return ['🔴','Dados insuficientes','bad']}
 function orcamentopdf(){
  const has=pdfBudgetState.environments.length>0;
  return shell('Orçamento Inteligente por PDF','Leia projetos executivos e transforme informações de marcenaria em uma pré-proposta sem redesenhar tudo no Promob',
- `<button class="btn" onclick="pdfBudgetReset()">Limpar análise</button><button class="btn gold" onclick="pdfBudgetPick()">📄 Importar projeto PDF</button>`,
+ `<button class="btn" onclick="pdfBudgetPricingOpen()">⚙ Tabela R$/m²</button><button class="btn" onclick="pdfBudgetReset()">Limpar análise</button><button class="btn gold" onclick="pdfBudgetPick()">📄 Importar projeto PDF</button>`,
  `<div class="pdf-budget-hero"><div><span>VIMAK • LEITOR DE PROJETO EXECUTIVO</span><h2>Do PDF para o orçamento.</h2><p>O sistema extrai textos, ambientes, cotas e especificações. Você confere tudo antes de transformar a leitura em proposta.</p></div><div class="pdf-flow"><b>PDF</b><i>→</i><b>LEITURA</b><i>→</i><b>CONFERÊNCIA</b><i>→</i><b>PROPOSTA</b></div></div>
  <input id="pdfBudgetFile" type="file" accept="application/pdf,.pdf" hidden onchange="pdfBudgetLoad(this)">
  ${!has?`<div class="pdf-drop" onclick="pdfBudgetPick()"><strong>📐</strong><h3>Importar projeto executivo</h3><p>Selecione o PDF recebido do arquiteto ou cliente.</p><button class="btn gold">Selecionar PDF</button><small>A leitura acontece no navegador.</small></div>`:pdfBudgetWorkspace()}
@@ -925,7 +959,7 @@ function orcamentopdf(){
 }
 function pdfBudgetWorkspace(){
  const envs=pdfBudgetState.environments;
- return `<div class="pdf-summary"><div class="card kpi"><label>Arquivo</label><strong>${esc(pdfBudgetState.fileName)}</strong><small>${pdfBudgetState.pages.length} página(s)</small></div><div class="card kpi"><label>Ambientes</label><strong class="goldtxt">${envs.length}</strong></div><div class="card kpi"><label>Alta confiança</label><strong>${envs.filter(x=>x.confidence>=75).length}</strong></div><div class="card kpi"><label>Valor preliminar</label><strong class="goldtxt">${money(envs.filter(x=>x.include).reduce((a,x)=>a+Number(x.price||0),0))}</strong></div></div>
+ return `<div class="pdf-summary"><div class="card kpi"><label>Arquivo</label><strong>${esc(pdfBudgetState.fileName)}</strong><small>${pdfBudgetState.pages.length} página(s)</small></div><div class="card kpi"><label>Ambientes</label><strong class="goldtxt">${envs.length}</strong></div><div class="card kpi"><label>m² estimados</label><strong>${envs.filter(x=>x.include).reduce((a,x)=>a+Number(x.m2||0),0).toFixed(2)} m²</strong></div><div class="card kpi"><label>Alta confiança</label><strong>${envs.filter(x=>x.confidence>=75).length}</strong></div><div class="card kpi"><label>Valor preliminar</label><strong class="goldtxt">${money(envs.filter(x=>x.include).reduce((a,x)=>a+Number(x.price||0),0))}</strong></div></div>
  <div class="pdf-project-bar"><div class="field"><label>Cliente</label><select id="pdfClient" onchange="pdfBudgetState.clientId=this.value"><option value="">Selecione...</option>${proposalClientOptions(pdfBudgetState.clientId)}</select></div><div class="field"><label>Nome do projeto</label><input value="${esc(pdfBudgetState.projectName||pdfBudgetState.fileName.replace(/\.pdf$/i,''))}" oninput="pdfBudgetState.projectName=this.value"></div><button class="btn gold" onclick="pdfBudgetToProposal()">💰 Criar proposta a partir da leitura</button></div>
  <div class="pdf-env-list">${envs.map((x,i)=>pdfBudgetEnvCard(x,i)).join('')}</div>`
 }
@@ -933,21 +967,21 @@ function pdfBudgetEnvCard(x,i){
  const [ico,label,cls]=pdfBudgetStatus(x);
  return `<section class="card pdf-env ${x.include?'':'off'}"><div class="pdf-env-head"><label class="pdf-check"><input type="checkbox" ${x.include?'checked':''} onchange="pdfBudgetState.environments[${i}].include=this.checked;render()"> Incluir</label><div><span>PÁGINA(S) ${x.pages.join(', ')}</span><h3>${esc(x.name)}</h3></div><div class="pdf-confidence ${cls}">${ico} ${label}<b>${x.confidence}%</b></div></div>
  <div class="pdf-env-grid"><div><label>Especificações identificadas</label><div class="pdf-tags">${x.features.length?x.features.map(v=>`<span>${esc(v)}</span>`).join(''):'<em>Nenhuma especificação clara.</em>'}</div></div><div><label>Cotas / medidas encontradas</label><div class="pdf-tags dims">${x.dimensions.length?x.dimensions.slice(0,12).map(v=>`<span>${esc(v)}</span>`).join(''):'<em>Conferir cotas visualmente.</em>'}</div></div></div>
- <div class="pdf-env-edit"><div class="field"><label>Ambiente</label><input value="${esc(x.name)}" oninput="pdfBudgetState.environments[${i}].name=this.value"></div><div class="field grow"><label>Resumo para orçamento</label><input value="${esc(x.features.join(' • '))}" oninput="pdfBudgetState.environments[${i}].customDescription=this.value"></div><div class="field price"><label>Valor preliminar (R$)</label><input type="number" min="0" step="100" value="${Number(x.price||0)}" oninput="pdfBudgetState.environments[${i}].price=Number(this.value||0);pdfBudgetRefreshTotal()"></div></div></section>`
+ <div class="pdf-m2-engine"><div class="pdf-m2-title"><b>📐 Quantificação do móvel</b><span class="${x.m2Source==='pdf'?'auto':'review'}">${x.m2Source==='pdf'?'Medida pareada encontrada no PDF':'Conferência manual'}</span></div><div class="pdf-m2-grid"><div class="field"><label>Largura (m)</label><input type="number" step="0.01" value="${Number(x.width||0)}" onchange="pdfBudgetState.environments[${i}].width=Number(this.value||0);pdfBudgetRecalc(${i})"></div><div class="field"><label>Altura (m)</label><input type="number" step="0.01" value="${Number(x.height||0)}" onchange="pdfBudgetState.environments[${i}].height=Number(this.value||0);pdfBudgetRecalc(${i})"></div><div class="pdf-m2-result"><label>Área frontal</label><strong>${Number(x.m2||0).toFixed(2)} m²</strong></div><div class="field"><label>Material</label><select onchange="pdfBudgetSetMaterial(${i},this.value)"><option value="white" ${x.materialClass==='white'?'selected':''}>MDF Branco</option><option value="wood" ${x.materialClass==='wood'?'selected':''}>MDF Madeirado</option><option value="color" ${x.materialClass==='color'?'selected':''}>MDF Colorido</option></select></div><div class="field"><label>Complexidade</label><select onchange="pdfBudgetSetComplexity(${i},this.value)"><option ${x.complexity==='Simples'?'selected':''}>Simples</option><option ${x.complexity==='Intermediária'?'selected':''}>Intermediária</option><option ${x.complexity==='Premium'?'selected':''}>Premium</option></select></div><div class="pdf-m2-result money"><label>Preço calculado</label><strong>${money(x.price||0)}</strong></div></div></div><div class="pdf-env-edit"><div class="field"><label>Ambiente</label><input value="${esc(x.name)}" oninput="pdfBudgetState.environments[${i}].name=this.value"></div><div class="field grow"><label>Resumo para orçamento</label><input value="${esc(x.features.join(' • '))}" oninput="pdfBudgetState.environments[${i}].customDescription=this.value"></div><div class="field price"><label>Ajuste manual do valor (R$)</label><input type="number" min="0" step="100" value="${Number(x.price||0)}" oninput="pdfBudgetState.environments[${i}].price=Number(this.value||0);pdfBudgetRefreshTotal()"></div></div></section>`
 }
 function pdfBudgetRefreshTotal(){const total=pdfBudgetState.environments.filter(x=>x.include).reduce((a,x)=>a+Number(x.price||0),0);const el=document.querySelector('.pdf-summary .card:last-child strong');if(el)el.textContent=money(total)}
 function pdfBudgetPick(){document.getElementById('pdfBudgetFile')?.click()}
 async function pdfBudgetLoad(input){
  const f=input.files?.[0];if(!f)return;if(f.type!=='application/pdf'&&!/\.pdf$/i.test(f.name))return toast('Selecione um arquivo PDF');if(typeof pdfjsLib==='undefined')return toast('Leitor de PDF não carregou. Atualize a página.');
  toast('Lendo projeto PDF...');
- try{const bytes=new Uint8Array(await f.arrayBuffer());const doc=await pdfjsLib.getDocument({data:bytes}).promise;const pages=[];for(let p=1;p<=doc.numPages;p++){const pg=await doc.getPage(p),content=await pg.getTextContent();pages.push({page:p,text:content.items.map(it=>it.str).join(' ')})}pdfBudgetState={fileName:f.name,pages,rawText:pages.map(x=>x.text).join('\n'),environments:pdfBudgetAnalyzePages(pages),clientId:'',projectName:f.name.replace(/\.pdf$/i,'')};toast(`${doc.numPages} página(s) analisada(s)`);render()}catch(e){console.error(e);toast('Não consegui ler este PDF: '+(e.message||'arquivo incompatível'))}
+ try{const bytes=new Uint8Array(await f.arrayBuffer());const doc=await pdfjsLib.getDocument({data:bytes}).promise;const pages=[];for(let p=1;p<=doc.numPages;p++){const pg=await doc.getPage(p),content=await pg.getTextContent();pages.push({page:p,text:content.items.map(it=>it.str).join(' ')})}pdfBudgetState={fileName:f.name,pages,rawText:pages.map(x=>x.text).join('\n'),environments:pdfBudgetAnalyzePages(pages),clientId:'',projectName:f.name.replace(/\.pdf$/i,''),pricing:pdfBudgetState.pricing||{white:1450,wood:1750,color:1950,premium:1.15}};toast(`${doc.numPages} página(s) analisada(s)`);render()}catch(e){console.error(e);toast('Não consegui ler este PDF: '+(e.message||'arquivo incompatível'))}
 }
-function pdfBudgetReset(){pdfBudgetState={fileName:'',pages:[],environments:[],rawText:'',clientId:'',projectName:''};render()}
+function pdfBudgetReset(){const pricing=pdfBudgetState.pricing;pdfBudgetState={fileName:'',pages:[],environments:[],rawText:'',clientId:'',projectName:'',pricing};render()}
 function pdfBudgetToProposal(){
  const selected=pdfBudgetState.environments.filter(x=>x.include);if(!selected.length)return toast('Selecione ao menos um ambiente');
  const clientId=document.getElementById('pdfClient')?.value||pdfBudgetState.clientId;if(!clientId)return toast('Selecione o cliente');
  pdfBudgetState.clientId=clientId;const title=(pdfBudgetState.projectName||'Projeto por PDF').trim();proposalEditingId=null;
- proposalDraftItems=selected.map(x=>({description:x.customDescription||x.features.join(' • ')||`Marcenaria conforme projeto executivo • páginas ${x.pages.join(', ')}`,environment:x.name,qty:1,unit:'amb',cost:0,unit_price:Number(x.price||0),metadata:{source:'pdf_budget',pages:x.pages,confidence:x.confidence,dimensions:x.dimensions,features:x.features,file_name:pdfBudgetState.fileName}}));
+ proposalDraftItems=selected.map(x=>({description:x.customDescription||x.features.join(' • ')||`Marcenaria conforme projeto executivo • páginas ${x.pages.join(', ')}`,environment:x.name,qty:Number(x.m2||1),unit:'m²',cost:0,unit_price:Number(x.m2||0)>0?Number(x.price||0)/Number(x.m2):Number(x.price||0),metadata:{source:'pdf_budget',m2:Number(x.m2||0),width:Number(x.width||0),height:Number(x.height||0),material_class:x.materialClass,complexity:x.complexity,pages:x.pages,confidence:x.confidence,dimensions:x.dimensions,features:x.features,file_name:pdfBudgetState.fileName}}));
  openProposalEditor({client_id:clientId,title:`${title} • Orçamento preliminar`,notes:`Pré-orçamento gerado a partir da leitura do arquivo ${pdfBudgetState.fileName}. Conferir medidas, materiais, ferragens e escopo antes da aprovação final.`})
 }
 
