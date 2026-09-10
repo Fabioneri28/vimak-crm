@@ -3,7 +3,7 @@ const NAV=[
 ["VISÃO GERAL",[["dashboard","⌂","Dashboard"],["leads","◎","Leads & CRM"]]],
 ["EMPRESA",[["empresa","◈","Configurações"],["usuarios","♙","Usuários"],["auditoria","◌","Auditoria"],["planos","◆","Assinatura / Planos"]]],
 ["CADASTROS",[["clientes","♙","Clientes"],["fornecedores","▣","Fornecedores"],["parceiros","◇","Parceiros"],["posvenda","✓","Pós-venda / Garantia"]]],
-["PROPOSTAS",[["insumos","▥","Insumos"],["propostas","▤","Propostas"],["modelos","▥","Modelos de Proposta"],["medicoes","⌗","Medições"],["compras","▰","Compras"]]],
+["PROPOSTAS",[["insumos","▥","Insumos"],["propostas","▤","Propostas"],["orcamentopdf","📐","Orçamento por PDF"],["modelos","▥","Modelos de Proposta"],["medicoes","⌗","Medições"],["compras","▰","Compras"]]],
 ["DOCUMENTOS",[["templates","▤","Templates"]]],
 ["PRODUÇÃO",[["kanban","▦","Kanban"],["corte","▥","Planos de Corte"],["sobras","▱","Estoque de Sobras"]]],
 ["INTEGRAÇÕES",[["cortecloud","⌁","Integração • CorteCloud"]]],
@@ -135,7 +135,7 @@ function can(route){
   if(profile.role==="Administrador")return true;
   const perms=Array.isArray(profile.permissions)?profile.permissions:[];
   if(perms.includes("*"))return true;
-  const map={dashboard:"dashboard",leads:"leads",clientes:"clientes",propostas:"propostas",kanban:"producao",corte:"producao",sobras:"producao",financeiro:"financeiro",rentabilidade:"financeiro",custosequipe:"financeiro",maquininhas:"financeiro",empresa:"empresa",usuarios:"usuarios",auditoria:"empresa",planos:"empresa",fornecedores:"cadastros",parceiros:"cadastros",posvenda:"cadastros",insumos:"cadastros",modelos:"propostas",medicoes:"propostas",compras:"propostas",templates:"documentos",cortecloud:"integracoes",equipes:"montagem",agenda:"montagem"};
+  const map={dashboard:"dashboard",leads:"leads",clientes:"clientes",propostas:"propostas",orcamentopdf:"propostas",kanban:"producao",corte:"producao",sobras:"producao",financeiro:"financeiro",rentabilidade:"financeiro",custosequipe:"financeiro",maquininhas:"financeiro",empresa:"empresa",usuarios:"usuarios",auditoria:"empresa",planos:"empresa",fornecedores:"cadastros",parceiros:"cadastros",posvenda:"cadastros",insumos:"cadastros",modelos:"propostas",medicoes:"propostas",compras:"propostas",templates:"documentos",cortecloud:"integracoes",equipes:"montagem",agenda:"montagem"};
   return perms.includes(map[route]||route);
 }
 function syncChrome(){
@@ -872,7 +872,7 @@ function propostas(){
     </tr>`;
   }).join("");
   return shell("Propostas","Orçamento comercial conectado a clientes, parceiros e insumos",
-    `<button class="btn gold" onclick="addProposal()">+ Nova Proposta</button>`,
+    `<button class="btn" onclick="location.hash='orcamentopdf'">📐 Orçamento por PDF</button><button class="btn gold" onclick="addProposal()">+ Nova Proposta</button>`,
     `<div class="grid g4 proposal-kpis">
       <div class="card kpi"><label>Pipeline em propostas</label><strong class="goldtxt">${money(total)}</strong></div>
       <div class="card kpi"><label>Aprovadas</label><strong>${aprovadas.length}</strong><small>${money(aprovadasValor)}</small></div>
@@ -885,6 +885,72 @@ function propostas(){
     </div>
     <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Nº</th><th>Proposta / Cliente</th><th>Ambientes</th><th>Status</th><th>Valor final</th><th>Validade</th><th>Ações</th></tr></thead><tbody id="rows">${rows||`<tr><td class="empty" colspan="7">Nenhuma proposta cadastrada. Clique em + Nova Proposta.</td></tr>`}</tbody></table></div></div>`);
 }
+
+let pdfBudgetState={fileName:'',pages:[],environments:[],rawText:'',clientId:'',projectName:''};
+function pdfBudgetNormalize(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim()}
+function pdfBudgetEnvName(s){
+ const n=pdfBudgetNormalize(s);
+ const map=[['HALL','Hall de Entrada'],['SALA','Sala'],['COZINHA','Cozinha'],['GOURMET','Área Gourmet'],['ESCRITORIO','Escritório'],['QUARTO FILHA','Quarto Filha'],['QUARTO','Quarto'],['HOSPED','Hóspedes'],['SUITE MASTER','Suíte Master'],['SUITE','Suíte'],['BWC FILHA','BWC Filha'],['BWC SOCIAL','BWC Social'],['BANHEIRO','Banheiro'],['LAVANDERIA','Lavanderia'],['AREA DE SERVICO','Área de Serviço'],['CLOSET','Closet'],['HOME','Home / TV'],['DORMITORIO','Dormitório']];
+ return map.find(([k])=>n.includes(k))?.[1]||''
+}
+function pdfBudgetFeatures(text){
+ const n=pdfBudgetNormalize(text),f=[];
+ const rules=[['MDF','MDF'],['18 MM','MDF 18 mm'],['25 MM','MDF 25 mm'],['6 MM','MDF 6 mm'],['AMADEIR','MDF amadeirado'],['BRANCO','MDF branco'],['COLORID','MDF colorido'],['LACA','Laca'],['RIPAD','Ripado'],['VIDRO','Vidro'],['ESPELHO','Espelho'],['LED','LED'],['GAVETA','Gavetas'],['GAVETAO','Gavetão'],['PORTA','Portas'],['CORREDICA','Corrediças'],['INVISIV','Corrediça invisível'],['AMORTECID','Amortecimento'],['DOBRADICA','Dobradiças'],['PRATELEIRA','Prateleiras'],['NICHO','Nicho'],['PAINEL','Painel'],['SAPATEIRA','Sapateira'],['CABIDEIRO','Cabideiro']];
+ rules.forEach(([k,v])=>{if(n.includes(k)&&!f.includes(v))f.push(v)});return f
+}
+function pdfBudgetDimensions(text){
+ const src=String(text||'').replace(/,/g,'.'),found=[];
+ const patterns=[/\b(\d{1,2}\.\d{1,3})\s*[xX×]\s*(\d{1,2}\.\d{1,3})\s*(?:m\b|M\b)?/g,/\b(\d{2,4})\s*[xX×]\s*(\d{2,4})\s*(?:mm\b|MM\b)?/g,/\b([0-9]{1,2}\.[0-9]{2})\s*m\b/gi];
+ patterns.forEach(rx=>{let m;while((m=rx.exec(src))&&found.length<24){const v=m[2]?`${m[1]} × ${m[2]}${Number(m[1])>30?' mm':' m'}`:`${m[1]} m`;if(!found.includes(v))found.push(v)}});return found
+}
+function pdfBudgetConfidence(text,features,dims){const n=pdfBudgetNormalize(text);let score=35;if(features.length>=3)score+=25;if(dims.length>=2)score+=25;if(/MARCENARIA|MDF|MOVEIS/.test(n))score+=15;return Math.min(100,score)}
+function pdfBudgetAnalyzePages(pages){
+ const known=[];
+ pages.forEach(pg=>{
+  const chunks=String(pg.text||'').split(/(?=\b(?:HALL|SALA|COZINHA|GOURMET|ESCRIT[ÓO]RIO|QUARTO|SU[IÍ]TE|BWC|BANHEIRO|LAVANDERIA|CLOSET|DORMIT[ÓO]RIO)\b)/i);
+  chunks.forEach(ch=>{const env=pdfBudgetEnvName(ch);if(!env)return;let x=known.find(z=>z.name===env);if(!x){x={name:env,pages:[],text:'',features:[],dimensions:[],confidence:0,price:0,include:true};known.push(x)}if(!x.pages.includes(pg.page))x.pages.push(pg.page);x.text+=' '+ch.slice(0,5000)})
+ });
+ if(!known.length){const all=pages.map(x=>x.text).join(' ');known.push({name:'Projeto / Marcenaria',pages:pages.map(x=>x.page),text:all,features:[],dimensions:[],confidence:0,price:0,include:true})}
+ known.forEach(x=>{x.features=pdfBudgetFeatures(x.text);x.dimensions=pdfBudgetDimensions(x.text);x.confidence=pdfBudgetConfidence(x.text,x.features,x.dimensions)});return known
+}
+function pdfBudgetStatus(x){if(x.confidence>=75)return ['🟢','Alta leitura','ok'];if(x.confidence>=50)return ['🟡','Conferir','warn'];return ['🔴','Dados insuficientes','bad']}
+function orcamentopdf(){
+ const has=pdfBudgetState.environments.length>0;
+ return shell('Orçamento Inteligente por PDF','Leia projetos executivos e transforme informações de marcenaria em uma pré-proposta sem redesenhar tudo no Promob',
+ `<button class="btn" onclick="pdfBudgetReset()">Limpar análise</button><button class="btn gold" onclick="pdfBudgetPick()">📄 Importar projeto PDF</button>`,
+ `<div class="pdf-budget-hero"><div><span>VIMAK • LEITOR DE PROJETO EXECUTIVO</span><h2>Do PDF para o orçamento.</h2><p>O sistema extrai textos, ambientes, cotas e especificações. Você confere tudo antes de transformar a leitura em proposta.</p></div><div class="pdf-flow"><b>PDF</b><i>→</i><b>LEITURA</b><i>→</i><b>CONFERÊNCIA</b><i>→</i><b>PROPOSTA</b></div></div>
+ <input id="pdfBudgetFile" type="file" accept="application/pdf,.pdf" hidden onchange="pdfBudgetLoad(this)">
+ ${!has?`<div class="pdf-drop" onclick="pdfBudgetPick()"><strong>📐</strong><h3>Importar projeto executivo</h3><p>Selecione o PDF recebido do arquiteto ou cliente.</p><button class="btn gold">Selecionar PDF</button><small>A leitura acontece no navegador.</small></div>`:pdfBudgetWorkspace()}
+ <div class="pdf-budget-note"><b>Importante:</b> esta etapa gera uma pré-análise. Cotas e especificações devem ser conferidas antes do preço final e da produção.</div>`)
+}
+function pdfBudgetWorkspace(){
+ const envs=pdfBudgetState.environments;
+ return `<div class="pdf-summary"><div class="card kpi"><label>Arquivo</label><strong>${esc(pdfBudgetState.fileName)}</strong><small>${pdfBudgetState.pages.length} página(s)</small></div><div class="card kpi"><label>Ambientes</label><strong class="goldtxt">${envs.length}</strong></div><div class="card kpi"><label>Alta confiança</label><strong>${envs.filter(x=>x.confidence>=75).length}</strong></div><div class="card kpi"><label>Valor preliminar</label><strong class="goldtxt">${money(envs.filter(x=>x.include).reduce((a,x)=>a+Number(x.price||0),0))}</strong></div></div>
+ <div class="pdf-project-bar"><div class="field"><label>Cliente</label><select id="pdfClient" onchange="pdfBudgetState.clientId=this.value"><option value="">Selecione...</option>${proposalClientOptions(pdfBudgetState.clientId)}</select></div><div class="field"><label>Nome do projeto</label><input value="${esc(pdfBudgetState.projectName||pdfBudgetState.fileName.replace(/\.pdf$/i,''))}" oninput="pdfBudgetState.projectName=this.value"></div><button class="btn gold" onclick="pdfBudgetToProposal()">💰 Criar proposta a partir da leitura</button></div>
+ <div class="pdf-env-list">${envs.map((x,i)=>pdfBudgetEnvCard(x,i)).join('')}</div>`
+}
+function pdfBudgetEnvCard(x,i){
+ const [ico,label,cls]=pdfBudgetStatus(x);
+ return `<section class="card pdf-env ${x.include?'':'off'}"><div class="pdf-env-head"><label class="pdf-check"><input type="checkbox" ${x.include?'checked':''} onchange="pdfBudgetState.environments[${i}].include=this.checked;render()"> Incluir</label><div><span>PÁGINA(S) ${x.pages.join(', ')}</span><h3>${esc(x.name)}</h3></div><div class="pdf-confidence ${cls}">${ico} ${label}<b>${x.confidence}%</b></div></div>
+ <div class="pdf-env-grid"><div><label>Especificações identificadas</label><div class="pdf-tags">${x.features.length?x.features.map(v=>`<span>${esc(v)}</span>`).join(''):'<em>Nenhuma especificação clara.</em>'}</div></div><div><label>Cotas / medidas encontradas</label><div class="pdf-tags dims">${x.dimensions.length?x.dimensions.slice(0,12).map(v=>`<span>${esc(v)}</span>`).join(''):'<em>Conferir cotas visualmente.</em>'}</div></div></div>
+ <div class="pdf-env-edit"><div class="field"><label>Ambiente</label><input value="${esc(x.name)}" oninput="pdfBudgetState.environments[${i}].name=this.value"></div><div class="field grow"><label>Resumo para orçamento</label><input value="${esc(x.features.join(' • '))}" oninput="pdfBudgetState.environments[${i}].customDescription=this.value"></div><div class="field price"><label>Valor preliminar (R$)</label><input type="number" min="0" step="100" value="${Number(x.price||0)}" oninput="pdfBudgetState.environments[${i}].price=Number(this.value||0);pdfBudgetRefreshTotal()"></div></div></section>`
+}
+function pdfBudgetRefreshTotal(){const total=pdfBudgetState.environments.filter(x=>x.include).reduce((a,x)=>a+Number(x.price||0),0);const el=document.querySelector('.pdf-summary .card:last-child strong');if(el)el.textContent=money(total)}
+function pdfBudgetPick(){document.getElementById('pdfBudgetFile')?.click()}
+async function pdfBudgetLoad(input){
+ const f=input.files?.[0];if(!f)return;if(f.type!=='application/pdf'&&!/\.pdf$/i.test(f.name))return toast('Selecione um arquivo PDF');if(typeof pdfjsLib==='undefined')return toast('Leitor de PDF não carregou. Atualize a página.');
+ toast('Lendo projeto PDF...');
+ try{const bytes=new Uint8Array(await f.arrayBuffer());const doc=await pdfjsLib.getDocument({data:bytes}).promise;const pages=[];for(let p=1;p<=doc.numPages;p++){const pg=await doc.getPage(p),content=await pg.getTextContent();pages.push({page:p,text:content.items.map(it=>it.str).join(' ')})}pdfBudgetState={fileName:f.name,pages,rawText:pages.map(x=>x.text).join('\n'),environments:pdfBudgetAnalyzePages(pages),clientId:'',projectName:f.name.replace(/\.pdf$/i,'')};toast(`${doc.numPages} página(s) analisada(s)`);render()}catch(e){console.error(e);toast('Não consegui ler este PDF: '+(e.message||'arquivo incompatível'))}
+}
+function pdfBudgetReset(){pdfBudgetState={fileName:'',pages:[],environments:[],rawText:'',clientId:'',projectName:''};render()}
+function pdfBudgetToProposal(){
+ const selected=pdfBudgetState.environments.filter(x=>x.include);if(!selected.length)return toast('Selecione ao menos um ambiente');
+ const clientId=document.getElementById('pdfClient')?.value||pdfBudgetState.clientId;if(!clientId)return toast('Selecione o cliente');
+ pdfBudgetState.clientId=clientId;const title=(pdfBudgetState.projectName||'Projeto por PDF').trim();proposalEditingId=null;
+ proposalDraftItems=selected.map(x=>({description:x.customDescription||x.features.join(' • ')||`Marcenaria conforme projeto executivo • páginas ${x.pages.join(', ')}`,environment:x.name,qty:1,unit:'amb',cost:0,unit_price:Number(x.price||0),metadata:{source:'pdf_budget',pages:x.pages,confidence:x.confidence,dimensions:x.dimensions,features:x.features,file_name:pdfBudgetState.fileName}}));
+ openProposalEditor({client_id:clientId,title:`${title} • Orçamento preliminar`,notes:`Pré-orçamento gerado a partir da leitura do arquivo ${pdfBudgetState.fileName}. Conferir medidas, materiais, ferragens e escopo antes da aprovação final.`})
+}
+
 async function deleteRow(table,id){
  if(!confirm("Excluir este registro?"))return;
  const {error}=await sb.from(table).delete().eq("id",id);
@@ -4047,6 +4113,6 @@ function teamRescisao(){const rows=finIntel.team.map(teamCalc);if(!rows.length)r
 function teamSimulate(){const id=document.getElementById('trMember')?.value,x=finIntel.team.find(v=>v.id===id);if(!x)return;const calc=teamCalc(x),date=new Date((document.getElementById('trDate')?.value||new Date().toISOString().slice(0,10))+'T12:00'),adm=new Date((x.admission_date||new Date().toISOString().slice(0,10))+'T12:00'),days=Math.max(0,Math.floor((date-adm)/86400000)),years=Math.floor(days/365),months=Math.max(1,Math.min(12,Math.floor((days%365)/30)||1));const inp=document.getElementById('teamResInputs'),out=document.getElementById('teamResResult');if(x.contract_type==='CLT'){inp.innerHTML=`<div class="form-grid"><div class="field"><label>Férias vencidas (períodos)</label><input id="trVac" type="number" min="0" value="0" oninput="teamSimulateClt()"></div><div class="field"><label>Saldo FGTS real</label><input id="trFgts" type="number" step=".01" value="${(n(x.base_salary)*n(teamCfg().fgts_rate)*Math.max(1,Math.floor(days/30))).toFixed(2)}" oninput="teamSimulateClt()"></div><div class="field full"><label>Aviso prévio</label><select id="trNotice" onchange="teamSimulateClt()"><option>Indenizado</option><option>Trabalhado</option></select></div></div>`;window._tr={x,days,years,months};teamSimulateClt()}else{inp.innerHTML=`<div class="form-grid"><div class="field"><label>Multa contratual</label><input id="trFine" type="number" step=".01" value="0" oninput="teamSimulatePJ()"></div><div class="field"><label>Aviso comercial</label><input id="trNoticePJ" type="number" step=".01" value="0" oninput="teamSimulatePJ()"></div></div>`;window._tr={x,days,years,months};teamSimulatePJ()}}
 function teamSimulateClt(){const q=window._tr;if(!q)return;const base=n(q.x.base_salary),noticeDays=30+q.years*3,notice=document.getElementById('trNotice')?.value==='Indenizado'?base/30*noticeDays:0,vacProp=base/12*q.months,vacExpired=base*n(document.getElementById('trVac')?.value),third=(vacProp+vacExpired)/3,th=base/12*q.months,fgts=n(document.getElementById('trFgts')?.value),fine=fgts*.40,total=notice+vacProp+vacExpired+third+th+fine;teamResResult.innerHTML=`<div class="fin-panel-head"><div><span>SIMULAÇÃO GERENCIAL</span><h3>${esc(q.x.name)}</h3></div><b class="red">${money(total)}</b></div><div class="rent-metrics"><div><span>Aviso (${noticeDays} dias)</span><b>${money(notice)}</b></div><div><span>Férias proporcionais</span><b>${money(vacProp)}</b></div><div><span>Férias vencidas</span><b>${money(vacExpired)}</b></div><div><span>1/3 de férias</span><b>${money(third)}</b></div><div><span>13º proporcional</span><b>${money(th)}</b></div><div><span>Multa FGTS 40%</span><b>${money(fine)}</b></div></div><p class="fin-copy">Estimativa gerencial baseada nos parâmetros cadastrados. Validar com contador/folha antes de decisão trabalhista.</p>`}
 function teamSimulatePJ(){const q=window._tr;if(!q)return;const a=n(document.getElementById('trFine')?.value),b=n(document.getElementById('trNoticePJ')?.value);teamResResult.innerHTML=`<div class="fin-panel-head"><div><span>SIMULAÇÃO CONTRATUAL</span><h3>${esc(q.x.name)}</h3></div><b class="red">${money(a+b)}</b></div><div class="rent-metrics"><div><span>Multa contratual</span><b>${money(a)}</b></div><div><span>Aviso comercial</span><b>${money(b)}</b></div></div><p class="fin-copy">Estimativa do impacto de caixa conforme condições comerciais informadas.</p>`}
-const VIEWS={dashboard,leads,empresa,usuarios,auditoria,planos,clientes,fornecedores,parceiros,posvenda,insumos,propostas,modelos,medicoes,compras,templates,kanban,corte,sobras,cortecloud,equipes,agenda,financeiro,rentabilidade,custosequipe,maquininhas};
+const VIEWS={dashboard,leads,empresa,usuarios,auditoria,planos,clientes,fornecedores,parceiros,posvenda,insumos,propostas,orcamentopdf,modelos,medicoes,compras,templates,kanban,corte,sobras,cortecloud,equipes,agenda,financeiro,rentabilidade,custosequipe,maquininhas};
 window.addEventListener("hashchange",()=>{page=location.hash.slice(1)||"dashboard";if(session)render()});
 init();
