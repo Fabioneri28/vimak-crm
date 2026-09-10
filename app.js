@@ -898,6 +898,72 @@ function pdfBudgetFeatures(text){
  const rules=[['MDF','MDF'],['18 MM','MDF 18 mm'],['25 MM','MDF 25 mm'],['6 MM','MDF 6 mm'],['AMADEIR','MDF amadeirado'],['BRANCO','MDF branco'],['COLORID','MDF colorido'],['LACA','Laca'],['RIPAD','Ripado'],['VIDRO','Vidro'],['ESPELHO','Espelho'],['LED','LED'],['GAVETA','Gavetas'],['GAVETAO','Gavetão'],['PORTA','Portas'],['CORREDICA','Corrediças'],['INVISIV','Corrediça invisível'],['AMORTECID','Amortecimento'],['DOBRADICA','Dobradiças'],['PRATELEIRA','Prateleiras'],['NICHO','Nicho'],['PAINEL','Painel'],['SAPATEIRA','Sapateira'],['CABIDEIRO','Cabideiro']];
  rules.forEach(([k,v])=>{if(n.includes(k)&&!f.includes(v))f.push(v)});return f
 }
+
+function pdfBudgetPageType(text){
+ const n=pdfBudgetNormalize(text);
+ if(/ELETRIC|TOMADA|ILUMINACAO|ILUMINAÇÃO/.test(n))return 'Elétrica / Iluminação';
+ if(/PAGINACAO|PAGINAÇÃO|REVESTIMENTO/.test(n))return 'Paginação / Revestimento';
+ if(/ISOMETR|PERSPECTIVA/.test(n))return 'Isométrico / Perspectiva';
+ if(/CORTE [A-Z]|CORTE AA|CORTE BB|SECAO|SEÇÃO/.test(n))return 'Corte técnico';
+ if(/VISTA|ELEVACAO|ELEVAÇÃO/.test(n))return 'Elevação / Vista';
+ if(/PLANTA BAIXA|PLANTA/.test(n))return 'Planta';
+ if(/MARCENARIA|MDF|MOVEIS|MÓVEIS/.test(n))return 'Detalhamento de marcenaria';
+ return 'Página geral'
+}
+function pdfBudgetFurnitureType(text){
+ const n=pdfBudgetNormalize(text);
+ const rules=[
+  ['Cozinha / Armário inferior',/BALCAO|ARMARIO INFERIOR|GABINETE/],
+  ['Cozinha / Armário aéreo',/ARMARIO AEREO|AEREO/],
+  ['Torre / Coluna',/TORRE|COLUNA/],
+  ['Guarda-roupa',/GUARDA.?ROUPA|ROUPEIRO/],
+  ['Closet',/CLOSET/],
+  ['Painel',/PAINEL/],
+  ['Rack / Home',/RACK|HOME/],
+  ['Bancada / Escrivaninha',/BANCADA|ESCRIVANINHA|MESA/],
+  ['Cabeceira',/CABECEIRA/],
+  ['Nicho / Prateleira',/NICHO|PRATELEIRA/],
+  ['Sapateira',/SAPATEIRA/],
+  ['Cristaleira',/CRISTALEIRA/],
+  ['Buffet / Aparador',/BUFFET|APARADOR/],
+  ['Gabinete de banheiro',/GABINETE|BANHEIRO|BWC/]
+ ];
+ return rules.find(([_,rx])=>rx.test(n))?.[0]||'Móvel planejado'
+}
+function pdfBudgetMeasureCandidates(text){
+ const src=String(text||'').replace(/,/g,'.');
+ const out=[];
+ const push=(w,h,d,unit,raw,pos,score,reason)=>{
+  let W=Number(w||0),H=Number(h||0),D=Number(d||0);
+  if(unit==='mm'){W/=1000;H/=1000;if(D)D/=1000}
+  if(!(W>0&&H>0)||W>15||H>6||W<0.1||H<0.1)return;
+  const start=Math.max(0,pos-90),end=Math.min(src.length,pos+raw.length+90);
+  const ctx=src.slice(start,end);
+  let s=score;
+  if(/LARGURA|LARG\.|COMP\.|COMPRIMENTO/i.test(ctx))s+=12;
+  if(/ALTURA|ALT\./i.test(ctx))s+=12;
+  if(/PROFUNDIDADE|PROF\./i.test(ctx))s+=6;
+  if(/MDF|MARCENARIA|ARMARIO|ARMÁRIO|PAINEL|PORTA|GAVETA|NICHO|PRATELEIRA/i.test(ctx))s+=10;
+  if(/PISO|PAREDE|AMBIENTE|FORRO|RODAPE|RODAPÉ/i.test(ctx))s-=15;
+  out.push({w:Number(W.toFixed(3)),h:Number(H.toFixed(3)),d:Number(D.toFixed(3)),m2:Number((W*H).toFixed(2)),raw,score:Math.max(0,Math.min(100,s)),reason,context:ctx.trim()})
+ };
+ let m;
+ const triple=/\b(\d{2,4})\s*[xX×]\s*(\d{2,4})\s*[xX×]\s*(\d{2,4})\s*(mm)?\b/g;
+ while((m=triple.exec(src)))push(m[1],m[2],m[3],'mm',m[0],m.index,72,'L × A × P');
+ const tripleM=/\b(\d{1,2}\.\d{1,3})\s*[xX×]\s*(\d{1,2}\.\d{1,3})\s*[xX×]\s*(\d{1,2}\.\d{1,3})\s*m?\b/g;
+ while((m=tripleM.exec(src)))push(m[1],m[2],m[3],'m',m[0],m.index,70,'L × A × P');
+ const pairMM=/\b(\d{2,4})\s*[xX×]\s*(\d{2,4})\s*(mm)?\b/g;
+ while((m=pairMM.exec(src)))push(m[1],m[2],0,'mm',m[0],m.index,58,'L × A');
+ const pairM=/\b(\d{1,2}\.\d{1,3})\s*[xX×]\s*(\d{1,2}\.\d{1,3})\s*m?\b/g;
+ while((m=pairM.exec(src)))push(m[1],m[2],0,'m',m[0],m.index,56,'L × A');
+ return out.sort((a,b)=>b.score-a.score).filter((x,i,a)=>i===a.findIndex(y=>y.raw===x.raw&&y.context===x.context)).slice(0,12)
+}
+function pdfBudgetBestMeasure(x){
+ const c=(x.measureCandidates||pdfBudgetMeasureCandidates(x.text||''))[0];
+ return c||null
+}
+function pdfBudgetReviewColor(score){return score>=78?'ok':score>=58?'warn':'bad'}
+
 function pdfBudgetDimensions(text){
  const src=String(text||'').replace(/,/g,'.'),found=[];
  const patterns=[/\b(\d{1,2}\.\d{1,3})\s*[xX×]\s*(\d{1,2}\.\d{1,3})\s*(?:m\b|M\b)?/g,/\b(\d{2,4})\s*[xX×]\s*(\d{2,4})\s*(?:mm\b|MM\b)?/g,/\b([0-9]{1,2}\.[0-9]{2})\s*m\b/gi];
@@ -911,15 +977,12 @@ function pdfBudgetAnalyzePages(pages){
   chunks.forEach(ch=>{const env=pdfBudgetEnvName(ch);if(!env)return;let x=known.find(z=>z.name===env);if(!x){x={name:env,pages:[],text:'',features:[],dimensions:[],confidence:0,price:0,include:true};known.push(x)}if(!x.pages.includes(pg.page))x.pages.push(pg.page);x.text+=' '+ch.slice(0,5000)})
  });
  if(!known.length){const all=pages.map(x=>x.text).join(' ');known.push({name:'Projeto / Marcenaria',pages:pages.map(x=>x.page),text:all,features:[],dimensions:[],confidence:0,price:0,include:true})}
- known.forEach(x=>{x.features=pdfBudgetFeatures(x.text);x.dimensions=pdfBudgetDimensions(x.text);x.confidence=pdfBudgetConfidence(x.text,x.features,x.dimensions);pdfBudgetInitMetrics(x)});return known
+ known.forEach(x=>{x.features=pdfBudgetFeatures(x.text);x.dimensions=pdfBudgetDimensions(x.text);x.measureCandidates=pdfBudgetMeasureCandidates(x.text);x.furnitureType=pdfBudgetFurnitureType(x.text);x.confidence=pdfBudgetConfidence(x.text,x.features,x.dimensions);pdfBudgetInitMetrics(x)});return known
 }
 function pdfBudgetM2Candidate(x){
- const pair=(x.dimensions||[]).find(v=>v.includes('×'));
- if(!pair)return {w:0,h:0,m2:0,source:'manual'};
- const nums=pair.match(/[0-9]+(?:\.[0-9]+)?/g)||[];if(nums.length<2)return {w:0,h:0,m2:0,source:'manual'};
- let w=Number(nums[0]),h=Number(nums[1]);if(/mm/i.test(pair)){w/=1000;h/=1000}
- if(w<=0||h<=0||w>15||h>6)return {w:0,h:0,m2:0,source:'manual'};
- return {w,h,m2:Number((w*h).toFixed(2)),source:'pdf'}
+ const c=pdfBudgetBestMeasure(x);
+ if(!c||c.score<62)return {w:0,h:0,d:0,m2:0,source:'manual',measureScore:c?.score||0,measureRaw:c?.raw||''};
+ return {w:c.w,h:c.h,d:c.d||0,m2:c.m2,source:'pdf',measureScore:c.score,measureRaw:c.raw}
 }
 function pdfBudgetMaterialClass(x){
  const n=pdfBudgetNormalize((x.features||[]).join(' ')+' '+(x.text||''));
@@ -937,7 +1000,7 @@ function pdfBudgetCalcPrice(x){
  return Math.round(m2*base*factor)
 }
 function pdfBudgetInitMetrics(x){
- const c=pdfBudgetM2Candidate(x);x.width=Number(x.width||c.w||0);x.height=Number(x.height||c.h||0);x.m2=Number(x.m2||c.m2||0);x.m2Source=x.m2Source||c.source;x.materialClass=x.materialClass||pdfBudgetMaterialClass(x);x.complexity=x.complexity||pdfBudgetComplexity(x);x.price=Number(x.price||pdfBudgetCalcPrice(x)||0);return x
+ const c=pdfBudgetM2Candidate(x);x.width=Number(x.width||c.w||0);x.height=Number(x.height||c.h||0);x.depth=Number(x.depth||c.d||0);x.m2=Number(x.m2||c.m2||0);x.m2Source=x.m2Source||c.source;x.measureScore=Number(x.measureScore||c.measureScore||0);x.measureRaw=x.measureRaw||c.measureRaw||'';x.furnitureType=x.furnitureType||pdfBudgetFurnitureType(x.text||'');x.materialClass=x.materialClass||pdfBudgetMaterialClass(x);x.complexity=x.complexity||pdfBudgetComplexity(x);x.price=Number(x.price||pdfBudgetCalcPrice(x)||0);return x
 }
 function pdfBudgetRecalc(i){const x=pdfBudgetState.environments[i];x.m2=Number((Number(x.width||0)*Number(x.height||0)).toFixed(2));x.m2Source='manual';x.price=pdfBudgetCalcPrice(x);render()}
 function pdfBudgetSetMaterial(i,v){const x=pdfBudgetState.environments[i];x.materialClass=v;x.price=pdfBudgetCalcPrice(x);render()}
@@ -1061,25 +1124,85 @@ function pdfBudgetWorkspace(){
  <div class="pdf-project-bar"><div class="field"><label>Cliente</label><select id="pdfClient" onchange="pdfBudgetState.clientId=this.value"><option value="">Selecione...</option>${proposalClientOptions(pdfBudgetState.clientId)}</select></div><div class="field"><label>Nome do projeto</label><input value="${esc(pdfBudgetState.projectName||pdfBudgetState.fileName.replace(/\.pdf$/i,''))}" oninput="pdfBudgetState.projectName=this.value"></div><button class="btn gold" onclick="pdfBudgetToProposal()">💰 Criar proposta a partir da leitura</button></div>
  <div class="pdf-env-list">${envs.map((x,i)=>pdfBudgetEnvCard(x,i)).join('')}</div>`
 }
+
+function pdfBudgetOpenReview(i,pageNo){
+ const x=pdfBudgetState.environments[i];if(!x)return;
+ const pg=Number(pageNo||x.pages?.[0]||1);
+ pdfBudgetState.activeReviewEnv=i;
+ const candidates=x.measureCandidates||[];
+ openModal(`Conferência visual • ${esc(x.name)}`,`<div class="pdf-review-modal">
+  <div class="pdf-review-left">
+   <div class="pdf-review-toolbar"><b>Prancha ${pg}</b><select id="pdfReviewPage" onchange="pdfBudgetRenderReview(${i},Number(this.value))">${(x.pages||[pg]).map(p=>`<option value="${p}" ${p===pg?'selected':''}>Página ${p}</option>`).join('')}</select></div>
+   <div class="pdf-canvas-wrap"><canvas id="pdfReviewCanvas"></canvas><div id="pdfReviewLoading">Renderizando prancha...</div></div>
+  </div>
+  <div class="pdf-review-right">
+   <div class="pdf-review-section"><span>CLASSIFICAÇÃO</span><h3>${esc(x.furnitureType||'Móvel planejado')}</h3><p>${esc((pdfBudgetState.pages.find(p=>p.page===pg)||{}).type||'Página geral')}</p></div>
+   <div class="pdf-review-section"><span>MEDIDA UTILIZADA</span><h3>${x.width&&x.height?`${Number(x.width).toFixed(2)} × ${Number(x.height).toFixed(2)} m`:'Não confirmada'}</h3><p>${x.depth?`Profundidade: ${Number(x.depth).toFixed(2)} m • `:''}${x.measureRaw?`Origem: ${esc(x.measureRaw)}`:'Preenchimento manual recomendado'}</p></div>
+   <div class="pdf-review-section"><span>CANDIDATOS DE COTA</span>
+    <div class="pdf-candidate-list">${candidates.length?candidates.map((c,ci)=>`<button class="pdf-candidate ${pdfBudgetReviewColor(c.score)}" onclick="pdfBudgetUseCandidate(${i},${ci})"><b>${c.w.toFixed(2)} × ${c.h.toFixed(2)} m${c.d?` × ${c.d.toFixed(2)} m`:''}</b><small>${c.reason} • confiança ${c.score}%</small><em>${esc(c.context.slice(0,150))}</em></button>`).join(''):'<div class="pdf-special-empty">Nenhuma cota pareada com segurança.</div>'}</div>
+   </div>
+   <div class="pdf-review-section"><span>ESPECIFICAÇÕES</span><div class="pdf-tags">${(x.features||[]).map(v=>`<span>${esc(v)}</span>`).join('')||'<em>Nenhuma detectada.</em>'}</div></div>
+   <div class="pdf-review-alert">Confira visualmente a prancha antes de aceitar medidas para precificação.</div>
+  </div>
+ </div>`);
+ setTimeout(()=>pdfBudgetRenderReview(i,pg),80)
+}
+async function pdfBudgetRenderReview(i,pageNo){
+ const loading=document.getElementById('pdfReviewLoading'),canvas=document.getElementById('pdfReviewCanvas');
+ if(!canvas||!pdfBudgetState.pdfUrl)return;
+ try{
+  if(loading)loading.style.display='block';
+  const doc=await pdfjsLib.getDocument(pdfBudgetState.pdfUrl).promise;
+  const pg=await doc.getPage(pageNo);
+  const base=pg.getViewport({scale:1});
+  const maxW=Math.min(950,document.querySelector('.pdf-review-left')?.clientWidth-24||850);
+  const scale=Math.max(.65,Math.min(1.8,maxW/base.width));
+  const vp=pg.getViewport({scale});
+  canvas.width=vp.width;canvas.height=vp.height;
+  await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+  if(loading)loading.style.display='none'
+ }catch(e){console.error(e);if(loading)loading.textContent='Não foi possível renderizar esta prancha.'}
+}
+function pdfBudgetUseCandidate(i,ci){
+ const x=pdfBudgetState.environments[i],c=x?.measureCandidates?.[ci];if(!x||!c)return;
+ x.width=c.w;x.height=c.h;x.depth=c.d||0;x.m2=c.m2;x.m2Source='pdf-reviewed';x.measureScore=c.score;x.measureRaw=c.raw;x.price=pdfBudgetCalcPrice(x);
+ closeModal();render();toast('Cota aplicada após conferência')
+}
+function pdfBudgetSetFurniture(i,v){const x=pdfBudgetState.environments[i];if(x)x.furnitureType=v}
+
 function pdfBudgetEnvCard(x,i){
  const [ico,label,cls]=pdfBudgetStatus(x);
- return `<section class="card pdf-env ${x.include?'':'off'}"><div class="pdf-env-head"><label class="pdf-check"><input type="checkbox" ${x.include?'checked':''} onchange="pdfBudgetState.environments[${i}].include=this.checked;render()"> Incluir</label><div><span>PÁGINA(S) ${x.pages.join(', ')}</span><h3>${esc(x.name)}</h3></div><div class="pdf-confidence ${cls}">${ico} ${label}<b>${x.confidence}%</b></div></div>
+ const furnitureOptions=['Móvel planejado','Cozinha / Armário inferior','Cozinha / Armário aéreo','Torre / Coluna','Guarda-roupa','Closet','Painel','Rack / Home','Bancada / Escrivaninha','Cabeceira','Nicho / Prateleira','Sapateira','Cristaleira','Buffet / Aparador','Gabinete de banheiro'];
+ const measureLabel=x.m2Source==='pdf-reviewed'?'Cota revisada':x.m2Source==='pdf'?'Cota provável':'Conferência manual';
+ const measureCls=x.m2Source==='pdf-reviewed'?'auto':(x.m2Source==='pdf'?'review':'review');
+ return `<section class="card pdf-env ${x.include?'':'off'}">
+ <div class="pdf-env-head"><label class="pdf-check"><input type="checkbox" ${x.include?'checked':''} onchange="pdfBudgetState.environments[${i}].include=this.checked;render()"> Incluir</label><div><span>PÁGINA(S) ${x.pages.join(', ')}</span><h3>${esc(x.name)}</h3></div><div class="pdf-confidence ${cls}">${ico} ${label}<b>${x.confidence}%</b></div></div>
+ <div class="pdf-tech-strip"><div><small>TIPO DE MÓVEL</small><select onchange="pdfBudgetSetFurniture(${i},this.value)">${furnitureOptions.map(v=>`<option ${x.furnitureType===v?'selected':''}>${v}</option>`).join('')}</select></div><div><small>LEITURA DE COTAS</small><b>${measureLabel}</b><span>${x.measureScore?`${x.measureScore}%`:''}</span></div><button class="btn gold" onclick="pdfBudgetOpenReview(${i})">👁 Conferir prancha</button></div>
  <div class="pdf-env-grid"><div><label>Especificações identificadas</label><div class="pdf-tags">${x.features.length?x.features.map(v=>`<span>${esc(v)}</span>`).join(''):'<em>Nenhuma especificação clara.</em>'}</div></div><div><label>Cotas / medidas encontradas</label><div class="pdf-tags dims">${x.dimensions.length?x.dimensions.slice(0,12).map(v=>`<span>${esc(v)}</span>`).join(''):'<em>Conferir cotas visualmente.</em>'}</div></div></div>
- <div class="pdf-m2-engine"><div class="pdf-m2-title"><b>📐 Quantificação do móvel</b><span class="${x.m2Source==='pdf'?'auto':'review'}">${x.m2Source==='pdf'?'Medida pareada encontrada no PDF':'Conferência manual'}</span></div><div class="pdf-m2-grid"><div class="field"><label>Largura (m)</label><input type="number" step="0.01" value="${Number(x.width||0)}" onchange="pdfBudgetState.environments[${i}].width=Number(this.value||0);pdfBudgetRecalc(${i})"></div><div class="field"><label>Altura (m)</label><input type="number" step="0.01" value="${Number(x.height||0)}" onchange="pdfBudgetState.environments[${i}].height=Number(this.value||0);pdfBudgetRecalc(${i})"></div><div class="pdf-m2-result"><label>Área frontal</label><strong>${Number(x.m2||0).toFixed(2)} m²</strong></div><div class="field"><label>Material</label><select onchange="pdfBudgetSetMaterial(${i},this.value)"><option value="white" ${x.materialClass==='white'?'selected':''}>MDF Branco</option><option value="wood" ${x.materialClass==='wood'?'selected':''}>MDF Madeirado</option><option value="color" ${x.materialClass==='color'?'selected':''}>MDF Colorido</option></select></div><div class="field"><label>Complexidade</label><select onchange="pdfBudgetSetComplexity(${i},this.value)"><option ${x.complexity==='Simples'?'selected':''}>Simples</option><option ${x.complexity==='Intermediária'?'selected':''}>Intermediária</option><option ${x.complexity==='Premium'?'selected':''}>Premium</option></select></div><div class="pdf-m2-result money"><label>Preço calculado</label><strong>${money(x.price||0)}</strong></div></div></div>${pdfSpecialBlock(x,i)}<div class="pdf-env-edit"><div class="field"><label>Ambiente</label><input value="${esc(x.name)}" oninput="pdfBudgetState.environments[${i}].name=this.value"></div><div class="field grow"><label>Resumo para orçamento</label><input value="${esc(x.features.join(' • '))}" oninput="pdfBudgetState.environments[${i}].customDescription=this.value"></div><div class="field price"><label>Ajuste manual do valor (R$)</label><input type="number" min="0" step="100" value="${Number(x.price||0)}" oninput="pdfBudgetState.environments[${i}].price=Number(this.value||0);pdfBudgetRefreshTotal()"></div></div></section>`
+ <div class="pdf-m2-engine"><div class="pdf-m2-title"><b>📐 Quantificação técnica</b><span class="${measureCls}">${x.measureRaw?esc(x.measureRaw):measureLabel}</span></div><div class="pdf-m2-grid">
+ <div class="field"><label>Largura (m)</label><input type="number" step="0.01" value="${Number(x.width||0)}" onchange="pdfBudgetState.environments[${i}].width=Number(this.value||0);pdfBudgetRecalc(${i})"></div>
+ <div class="field"><label>Altura (m)</label><input type="number" step="0.01" value="${Number(x.height||0)}" onchange="pdfBudgetState.environments[${i}].height=Number(this.value||0);pdfBudgetRecalc(${i})"></div>
+ <div class="field"><label>Profundidade (m)</label><input type="number" step="0.01" value="${Number(x.depth||0)}" onchange="pdfBudgetState.environments[${i}].depth=Number(this.value||0)"></div>
+ <div class="pdf-m2-result"><label>Área frontal</label><strong>${Number(x.m2||0).toFixed(2)} m²</strong></div>
+ <div class="field"><label>Material</label><select onchange="pdfBudgetSetMaterial(${i},this.value)"><option value="white" ${x.materialClass==='white'?'selected':''}>MDF Branco</option><option value="wood" ${x.materialClass==='wood'?'selected':''}>MDF Madeirado</option><option value="color" ${x.materialClass==='color'?'selected':''}>MDF Colorido</option></select></div>
+ <div class="field"><label>Complexidade</label><select onchange="pdfBudgetSetComplexity(${i},this.value)"><option ${x.complexity==='Simples'?'selected':''}>Simples</option><option ${x.complexity==='Intermediária'?'selected':''}>Intermediária</option><option ${x.complexity==='Premium'?'selected':''}>Premium</option></select></div>
+ <div class="pdf-m2-result money"><label>Preço calculado</label><strong>${money(x.price||0)}</strong></div></div></div>
+ ${pdfSpecialBlock(x,i)}
+ <div class="pdf-env-edit"><div class="field"><label>Ambiente</label><input value="${esc(x.name)}" oninput="pdfBudgetState.environments[${i}].name=this.value"></div><div class="field grow"><label>Resumo para orçamento</label><input value="${esc(x.features.join(' • '))}" oninput="pdfBudgetState.environments[${i}].customDescription=this.value"></div><div class="field price"><label>Ajuste manual do valor (R$)</label><input type="number" min="0" step="100" value="${Number(x.price||0)}" oninput="pdfBudgetState.environments[${i}].price=Number(this.value||0);pdfBudgetRefreshTotal()"></div></div></section>`
 }
 function pdfBudgetRefreshTotal(){const total=pdfBudgetState.environments.filter(x=>x.include).reduce((a,x)=>a+Number(x.price||0)+pdfSpecialTotal(x),0);const el=document.querySelector('.pdf-summary .card:last-child strong');if(el)el.textContent=money(total);document.querySelectorAll('.pdf-special-total').forEach((el,idx)=>{const env=pdfBudgetState.environments[idx];const b=el.querySelector('b');if(env&&b)b.textContent=money(pdfSpecialTotal(env))})}
 function pdfBudgetPick(){document.getElementById('pdfBudgetFile')?.click()}
 async function pdfBudgetLoad(input){
  const f=input.files?.[0];if(!f)return;if(f.type!=='application/pdf'&&!/\.pdf$/i.test(f.name))return toast('Selecione um arquivo PDF');if(typeof pdfjsLib==='undefined')return toast('Leitor de PDF não carregou. Atualize a página.');
  toast('Lendo projeto PDF...');
- try{const bytes=new Uint8Array(await f.arrayBuffer());const doc=await pdfjsLib.getDocument({data:bytes}).promise;const pages=[];for(let p=1;p<=doc.numPages;p++){const pg=await doc.getPage(p),content=await pg.getTextContent();pages.push({page:p,text:content.items.map(it=>it.str).join(' ')})}pdfBudgetState={fileName:f.name,pages,rawText:pages.map(x=>x.text).join('\n'),environments:pdfBudgetAnalyzePages(pages),clientId:'',projectName:f.name.replace(/\.pdf$/i,''),pricing:pdfBudgetState.pricing||{white:1450,wood:1750,color:1950,premium:1.15}};pdfSpecialAutoSeed();toast(`${doc.numPages} página(s) analisada(s)`);render()}catch(e){console.error(e);toast('Não consegui ler este PDF: '+(e.message||'arquivo incompatível'))}
+ try{const bytes=new Uint8Array(await f.arrayBuffer());const doc=await pdfjsLib.getDocument({data:bytes}).promise;const pages=[];for(let p=1;p<=doc.numPages;p++){const pg=await doc.getPage(p),content=await pg.getTextContent();const text=content.items.map(it=>it.str).join(' ');pages.push({page:p,text,type:pdfBudgetPageType(text)})}if(pdfBudgetState.pdfUrl)try{URL.revokeObjectURL(pdfBudgetState.pdfUrl)}catch(_e){}const pdfUrl=URL.createObjectURL(f);pdfBudgetState={fileName:f.name,pages,rawText:pages.map(x=>x.text).join('\n'),environments:pdfBudgetAnalyzePages(pages),clientId:'',projectName:f.name.replace(/\.pdf$/i,''),pricing:pdfBudgetState.pricing||{white:1450,wood:1750,color:1950,premium:1.15},pdfUrl};pdfSpecialAutoSeed();toast(`${doc.numPages} página(s) analisada(s)`);render()}catch(e){console.error(e);toast('Não consegui ler este PDF: '+(e.message||'arquivo incompatível'))}
 }
-function pdfBudgetReset(){const pricing=pdfBudgetState.pricing;pdfBudgetState={fileName:'',pages:[],environments:[],rawText:'',clientId:'',projectName:'',pricing};render()}
+function pdfBudgetReset(){const pricing=pdfBudgetState.pricing;if(pdfBudgetState.pdfUrl)try{URL.revokeObjectURL(pdfBudgetState.pdfUrl)}catch(_e){}pdfBudgetState={fileName:'',pages:[],environments:[],rawText:'',clientId:'',projectName:'',pricing,pdfUrl:'',activeReviewEnv:null};render()}
 function pdfBudgetToProposal(){
  const selected=pdfBudgetState.environments.filter(x=>x.include);if(!selected.length)return toast('Selecione ao menos um ambiente');
  const clientId=document.getElementById('pdfClient')?.value||pdfBudgetState.clientId;if(!clientId)return toast('Selecione o cliente');
  pdfBudgetState.clientId=clientId;const title=(pdfBudgetState.projectName||'Projeto por PDF').trim();proposalEditingId=null;
- proposalDraftItems=selected.map(x=>({description:x.customDescription||x.features.join(' • ')||`Marcenaria conforme projeto executivo • páginas ${x.pages.join(', ')}`,environment:x.name,qty:1,unit:'amb',cost:0,unit_price:Number(x.price||0)+pdfSpecialTotal(x),metadata:{source:'pdf_budget',m2:Number(x.m2||0),width:Number(x.width||0),height:Number(x.height||0),material_class:x.materialClass,complexity:x.complexity,pages:x.pages,confidence:x.confidence,dimensions:x.dimensions,features:x.features,specials:x.specials||[],specials_total:pdfSpecialTotal(x),file_name:pdfBudgetState.fileName}}));
+ proposalDraftItems=selected.map(x=>({description:x.customDescription||x.features.join(' • ')||`Marcenaria conforme projeto executivo • páginas ${x.pages.join(', ')}`,environment:x.name,qty:1,unit:'amb',cost:0,unit_price:Number(x.price||0)+pdfSpecialTotal(x),metadata:{source:'pdf_budget',m2:Number(x.m2||0),width:Number(x.width||0),height:Number(x.height||0),material_class:x.materialClass,complexity:x.complexity,furniture_type:x.furnitureType,depth:Number(x.depth||0),measure_score:Number(x.measureScore||0),measure_raw:x.measureRaw||'',pages:x.pages,page_types:(x.pages||[]).map(p=>pdfBudgetState.pages.find(pg=>pg.page===p)?.type||''),confidence:x.confidence,dimensions:x.dimensions,features:x.features,specials:x.specials||[],specials_total:pdfSpecialTotal(x),file_name:pdfBudgetState.fileName}}));
  openProposalEditor({client_id:clientId,title:`${title} • Orçamento preliminar`,notes:`Pré-orçamento gerado a partir da leitura do arquivo ${pdfBudgetState.fileName}. Conferir medidas, materiais, ferragens e escopo antes da aprovação final.`})
 }
 
