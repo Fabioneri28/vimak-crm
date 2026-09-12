@@ -1295,20 +1295,72 @@ function usuarios(){
 async function auditLoadSafe(){
  if(adminSafe.loadingAudit)return;
  adminSafe.loadingAudit=true;adminSafe.auditError="";
- const {data,error}=await sb.from("audit_logs").select("*").eq("company_id",company.id).order("created_at",{ascending:false}).limit(300);
+ const {data,error}=await sb.from("audit_logs").select("*").eq("company_id",company.id).order("created_at",{ascending:false}).limit(1500);
  adminSafe.audit=data||[];adminSafe.auditError=error?.message||"";adminSafe.loadingAudit=false;
  if(page==="auditoria")content.innerHTML=auditoria()
 }
+function auditModuleName(x){
+ const direct=x?.module;if(direct)return direct;
+ const m={companies:'Empresa',profiles:'Usuários',clients:'Clientes',leads:'Leads & CRM',suppliers:'Fornecedores',partners:'Parceiros',inputs:'Insumos / Estoque',input_movements:'Movimentações de Estoque',proposals:'Propostas / Projetos',proposal_items:'Itens da Proposta',proposal_models:'Modelos de Proposta',measurements:'Medições',purchase_orders:'Compras',purchase_order_items:'Itens de Compra',document_templates:'Documentos',production_projects:'Produção',cutting_plans:'Plano de Corte',sheet_remnants:'Estoque de Sobras',after_sales_tickets:'Pós-venda',maintenance_orders:'Manutenção / OS',installation_teams:'Equipe de Montagem',installation_schedule:'Agenda de Montagem',cost_centers:'Centros de Custo',bank_accounts:'Contas Bancárias',accounts_receivable:'Contas a Receber',accounts_payable:'Contas a Pagar',invoices:'Notas / Faturas',card_machines:'Maquininhas',finance_entities:'Financeiro',finance_budgets:'Orçamentos Financeiros',finance_budget_items:'Itens Orçamentários',finance_transactions:'Transações Financeiras',finance_approvals:'Aprovações Financeiras',profitability_projects:'Rentabilidade',profitability_assets:'Patrimônio',profitability_personal_expenses:'Despesas Pessoais',profitability_settings:'Config. Rentabilidade',team_cost_members:'Custos de Funcionários',team_cost_settings:'Config. Equipe',integrations:'Integrações'};
+ return m[x?.table_name]||x?.table_name||'Sistema'
+}
+function auditActionName(x){
+ const a=String(x?.action||x?.operation||'—').toUpperCase();
+ const m={INSERT:'CADASTRO',UPDATE:'ALTERAÇÃO',DELETE:'EXCLUSÃO'};return m[a]||a
+}
+function auditActionClass(x){const a=auditActionName(x);if(/EXCLUS/.test(a))return'bad';if(/ALTER|MOVIMENT|AJUST/.test(a))return'warn';return'ok'}
+function auditPayload(x){return x?.new_data||x?.old_data||{}}
+function auditRecordName(x){const d=auditPayload(x);return d.name||d.title||d.description||d.number||d.sku||d.provider||d.service_type||d.label||x?.record_id||'—'}
+function auditChanged(x){
+ if(Array.isArray(x?.changed_fields)&&x.changed_fields.length)return x.changed_fields;
+ const a=x?.old_data||{},b=x?.new_data||{};return [...new Set([...Object.keys(a),...Object.keys(b)])].filter(k=>JSON.stringify(a[k])!==JSON.stringify(b[k])&& !['updated_at'].includes(k))
+}
+function auditUserName(x){return x?.user_name||x?.user_email||'Sistema / Público'}
+function auditSummary(x){
+ const a=auditActionName(x),r=auditRecordName(x),fields=auditChanged(x);
+ if(a==='CADASTRO')return `Cadastrou: ${r}`;
+ if(a==='EXCLUSÃO')return `Excluiu: ${r}`;
+ if(a==='MOVIMENTAÇÃO')return x?.summary||`Movimentação em ${r}`;
+ if(fields.length)return `Alterou ${fields.slice(0,4).join(', ')}${fields.length>4?' +'+(fields.length-4):''}`;
+ return x?.summary||`${a}: ${r}`
+}
+function auditUnique(field){return [...new Set((adminSafe.audit||[]).map(x=>field==='module'?auditModuleName(x):field==='action'?auditActionName(x):auditUserName(x)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'))}
+function auditFiltered(){
+ const q=String(document.getElementById('auditSearch')?.value||'').trim().toLowerCase(),mod=document.getElementById('auditModule')?.value||'',act=document.getElementById('auditAction')?.value||'',usr=document.getElementById('auditUser')?.value||'',ini=document.getElementById('auditFrom')?.value||'',fim=document.getElementById('auditTo')?.value||'';
+ return (adminSafe.audit||[]).filter(x=>{
+  const dt=new Date(x.created_at),md=auditModuleName(x),ac=auditActionName(x),un=auditUserName(x),blob=[md,ac,un,x.user_email,auditRecordName(x),x.record_id,x.table_name,auditSummary(x)].join(' ').toLowerCase();
+  if(q&&!blob.includes(q))return false;if(mod&&md!==mod)return false;if(act&&ac!==act)return false;if(usr&&un!==usr)return false;
+  if(ini&&dt<new Date(ini+'T00:00:00'))return false;if(fim&&dt>new Date(fim+'T23:59:59'))return false;return true
+ })
+}
+function auditRenderRows(list){
+ window._vimakAuditVisible=list;
+ const body=document.getElementById('auditRows'),cnt=document.getElementById('auditVisibleCount');if(cnt)cnt.textContent=list.length;if(!body)return;
+ body.innerHTML=list.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('pt-BR')}</td><td><div class="audit-user"><b>${esc(auditUserName(x))}</b><small>${esc(x.user_email||'')}</small></div></td><td><span class="status ${auditActionClass(x)}">${esc(auditActionName(x))}</span></td><td><b>${esc(auditModuleName(x))}</b><small class="audit-table">${esc(x.table_name||'')}</small></td><td>${esc(auditRecordName(x))}</td><td>${esc(auditSummary(x))}</td><td><button class="btn sm" onclick="auditDetail('${x.id}')">Ver</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">Nenhum evento encontrado com esses filtros.</td></tr>'
+}
+function auditApply(){auditRenderRows(auditFiltered())}
+function auditReset(){['auditSearch','auditModule','auditAction','auditUser','auditFrom','auditTo'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=''});auditApply()}
+function auditValue(v){if(v===null||v===undefined||v==='')return'—';if(typeof v==='object')return JSON.stringify(v);return String(v)}
+function auditDetail(id){
+ const x=(adminSafe.audit||[]).find(a=>String(a.id)===String(id));if(!x)return;
+ const old=x.old_data||{},neu=x.new_data||{},keys=[...new Set([...Object.keys(old),...Object.keys(neu)])].filter(k=>!['updated_at'].includes(k));
+ const rows=keys.map(k=>{const changed=JSON.stringify(old[k])!==JSON.stringify(neu[k]);return `<tr class="${changed?'audit-changed':''}"><td><b>${esc(k)}</b></td><td>${esc(auditValue(old[k]))}</td><td>${esc(auditValue(neu[k]))}</td></tr>`}).join('');
+ openModal('Detalhes da Auditoria',`<div class="audit-detail-head"><div><small>DATA / HORA</small><b>${new Date(x.created_at).toLocaleString('pt-BR')}</b></div><div><small>USUÁRIO</small><b>${esc(auditUserName(x))}</b></div><div><small>AÇÃO</small><b>${esc(auditActionName(x))}</b></div><div><small>MÓDULO</small><b>${esc(auditModuleName(x))}</b></div></div><div class="notice"><b>${esc(auditSummary(x))}</b><br><small>Registro: ${esc(x.record_id||'—')} • Origem: ${esc(x.source_app||'CRM / API')}</small></div><div class="table-wrap"><table class="table audit-detail-table"><thead><tr><th>Campo</th><th>Antes</th><th>Depois</th></tr></thead><tbody>${rows||'<tr><td colspan="3">Sem dados comparáveis.</td></tr>'}</tbody></table></div>`)
+}
+function auditExport(){
+ const list=auditFiltered(),lines=[['Data/Hora','Usuário','E-mail','Ação','Módulo','Tabela','Registro','Resumo'].join(';'),...list.map(x=>[new Date(x.created_at).toLocaleString('pt-BR'),auditUserName(x),x.user_email||'',auditActionName(x),auditModuleName(x),x.table_name||'',auditRecordName(x),auditSummary(x)].map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(';'))];
+ const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`auditoria-vimak-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href)
+}
 function auditoria(){
  if(adminSafe.audit===null&&!adminSafe.loadingAudit)setTimeout(auditLoadSafe,0);
- const list=adminSafe.audit||[];
- return shell("Auditoria","Rastreabilidade dos eventos registrados no ambiente","",
- `<div class="safe-admin-hero"><div><span>V6.22 • AUDITORIA</span><h2>Audit Trail</h2><p>Visualize ações registradas sem interferir no carregamento principal do CRM.</p></div><div class="safe-admin-plan"><small>EVENTOS</small><b>${list.length}</b></div></div>
- ${adminSafe.auditError?`<div class="notice">Auditoria indisponível para este usuário: ${esc(adminSafe.auditError)}. Nenhum outro módulo foi afetado.</div>`:""}
- <div class="filters"><div class="field"><label>Buscar</label><input placeholder="Ação, módulo ou registro..." oninput="filterTable(this.value)"></div></div>
- <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Data/Hora</th><th>Ação</th><th>Módulo</th><th>Registro</th></tr></thead><tbody id="rows">
- ${list.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString("pt-BR")}</td><td><span class="safe-role">${esc(x.action||"—")}</span></td><td>${esc(x.table_name||"—")}</td><td>${esc(x.record_id||"—")}</td></tr>`).join("")||`<tr><td colspan="4" class="empty">${adminSafe.loadingAudit?"Carregando auditoria...":"Nenhum evento registrado."}</td></tr>`}
- </tbody></table></div></div>`)
+ const list=adminSafe.audit||[],today=new Date(),last24=list.filter(x=>Date.now()-new Date(x.created_at).getTime()<=86400000).length,users=new Set(list.map(a=>a.user_id||a.user_email).filter(Boolean)).size,deletes=list.filter(x=>auditActionName(x)==='EXCLUSÃO').length,mods=auditUnique('module'),acts=auditUnique('action'),usrs=auditUnique('user');
+ setTimeout(()=>auditRenderRows(list),0);
+ return shell("Auditoria Geral da Empresa","Rastreabilidade completa de cadastros, alterações, exclusões e movimentações em todos os módulos","",
+ `<div class="safe-admin-hero audit-hero"><div><span>V6.24 • AUDITORIA 360°</span><h2>Central de Rastreabilidade</h2><p>Saiba quem cadastrou, alterou ou excluiu clientes, projetos, propostas, financeiro, estoque e demais etapas do CRM.</p></div><div class="safe-admin-plan"><small>EVENTOS CARREGADOS</small><b>${list.length}</b></div></div>
+ ${adminSafe.auditError?`<div class="notice">Não foi possível consultar a auditoria: ${esc(adminSafe.auditError)}</div>`:""}
+ <div class="audit-kpis"><div class="audit-kpi"><small>ÚLTIMAS 24 HORAS</small><b>${last24}</b><span>eventos</span></div><div class="audit-kpi"><small>USUÁRIOS MAPEADOS</small><b>${users}</b><span>responsáveis</span></div><div class="audit-kpi"><small>EXCLUSÕES</small><b>${deletes}</b><span>ações críticas</span></div><div class="audit-kpi"><small>MÓDULOS</small><b>${mods.length}</b><span>áreas rastreadas</span></div></div>
+ <section class="card pad audit-filter-card"><div class="audit-filter-grid"><div class="field audit-search"><label>Buscar</label><input id="auditSearch" placeholder="Cliente, projeto, SKU, usuário, ação..." oninput="auditApply()"></div><div class="field"><label>Módulo</label><select id="auditModule" onchange="auditApply()"><option value="">Todos</option>${mods.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Ação</label><select id="auditAction" onchange="auditApply()"><option value="">Todas</option>${acts.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Usuário</label><select id="auditUser" onchange="auditApply()"><option value="">Todos</option>${usrs.map(v=>`<option>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>De</label><input id="auditFrom" type="date" onchange="auditApply()"></div><div class="field"><label>Até</label><input id="auditTo" type="date" onchange="auditApply()"></div></div><div class="client-quick"><button class="btn" onclick="auditReset()">Limpar filtros</button><button class="btn" onclick="auditLoadSafe()">↻ Atualizar</button><button class="btn gold" onclick="auditExport()">⇩ Exportar CSV</button></div></section>
+ <div class="card"><div class="audit-table-head"><div><h3>Histórico completo</h3><p><b id="auditVisibleCount">${list.length}</b> eventos visíveis</p></div><div class="audit-legend"><span class="status ok">CADASTRO</span><span class="status warn">ALTERAÇÃO</span><span class="status bad">EXCLUSÃO</span></div></div><div class="table-wrap"><table class="table audit-main-table"><thead><tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>Módulo</th><th>Registro</th><th>Resumo</th><th></th></tr></thead><tbody id="auditRows">${adminSafe.loadingAudit?'<tr><td colspan="7" class="empty">Carregando auditoria...</td></tr>':''}</tbody></table></div></div>`)
 }
 function planos(){
  const current=String(company.plan||"trial").toLowerCase();
@@ -2304,9 +2356,27 @@ function stockSettingsMenu(){
  openModal('Ferramentas do Estoque',`<div class="stock-tools-menu">
   <button class="btn gold" onclick="closeModal();stockDirectChooseCsv()">⇧ Importar estoque completo</button>
   <button class="btn" onclick="closeModal();inputHelp()">? Como usar</button>
+  <button class="btn gold" onclick="closeModal();stockAuditOpen()">◎ Auditoria Almoxarifado</button>
   <button class="btn" onclick="stockExportCsv()">⇩ Exportar CSV</button>
  </div>`,'')
 }
+
+async function stockAuditOpen(){
+ const {data,error}=await sb.from('stock_audit_logs').select('*').eq('company_id',profile.company_id).order('created_at',{ascending:false}).limit(500);
+ if(error)return toast('Erro ao carregar auditoria: '+error.message);
+ window._stockAuditData=data||[];
+ const actions=[...new Set(window._stockAuditData.map(x=>x.action).filter(Boolean))];
+ openModal('Auditoria do Almoxarifado',`<div class="stock-audit-toolbar"><input id="stockAuditSearch" placeholder="Buscar usuário, SKU, ação..." oninput="stockAuditFilter()"><select id="stockAuditAction" onchange="stockAuditFilter()"><option value="">Todas as ações</option>${actions.map(a=>`<option>${esc(a)}</option>`).join('')}</select></div><div id="stockAuditBody">${stockAuditTable(window._stockAuditData)}</div>`)
+}
+function stockAuditFilter(){
+ const q=String(document.getElementById('stockAuditSearch')?.value||'').toLowerCase(),act=document.getElementById('stockAuditAction')?.value||'';
+ const rows=(window._stockAuditData||[]).filter(x=>(!act||x.action===act)&&(!q||[x.user_name,x.user_email,x.sku,x.action,x.note].join(' ').toLowerCase().includes(q)));
+ document.getElementById('stockAuditBody').innerHTML=stockAuditTable(rows)
+}
+function stockAuditTable(rows){
+ return `<div class="stock-audit-summary"><b>${rows.length}</b><span>registros encontrados</span></div><div class="stock-premium-tablewrap"><table class="stock-premium-table"><thead><tr><th>DATA/HORA</th><th>USUÁRIO</th><th>AÇÃO</th><th>SKU</th><th>DETALHE</th><th>ORIGEM</th></tr></thead><tbody>${rows.map(a=>`<tr><td>${new Date(a.created_at).toLocaleString('pt-BR')}</td><td><b>${esc(a.user_name||'Usuário')}</b><br><small>${esc(a.user_email||'')}</small></td><td><span class="stock-audit-action">${esc(a.action)}</span></td><td>${esc(a.sku||'—')}</td><td>${esc(a.note||'Alteração registrada')}</td><td>${esc(a.source_app||'—')}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">Nenhum registro.</td></tr>'}</tbody></table></div>`
+}
+
 function insumos(){
  const total=cache.inputs.length;
  const alerts=cache.inputs.filter(x=>inputStock(x)<=inputMinStock(x)).length;
