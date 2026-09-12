@@ -2008,6 +2008,78 @@ function inputPhoto(x){const sku=String(x?.sku||x?.code||'').padStart(3,'0');ret
 function inputLocation(x){return [x?.location_street&&`Rua ${x.location_street}`,x?.location_shelf&&`Prat. ${x.location_shelf}`,x?.location_drawer&&`Gav. ${x.location_drawer}`].filter(Boolean).join(' • ')||'Não definida'}
 function inputStatus(x){const s=inputStock(x),m=inputMinStock(x);if(s<=0)return ['Zerado','danger'];if(m>0&&s<=m)return ['Baixo','warn'];return ['Normal','ok']}
 function inputHelp(){openModal('Como usar o Estoque & Insumos',`<div class="stock-help"><h3>Feito para ser simples.</h3><p>Use estes 5 passos no dia a dia:</p><div class="stock-help-steps"><b>1. Cadastrar</b><span>Crie um produto novo e informe SKU, nome, preço e localização.</span><b>2. Entrada</b><span>Quando comprar material, clique em <strong>Movimentar</strong> e escolha Entrada.</span><b>3. Saída</b><span>Quando usar um item, escolha Saída. O saldo é calculado automaticamente.</span><b>4. Editar</b><span>Corrija nome, preço, estoque mínimo, localização ou foto.</span><b>5. Comprar</b><span>Os itens em amarelo/vermelho precisam de atenção ou reposição.</span></div><div class="cloudbar">Dica: nunca altere o saldo para registrar consumo. Use <b>Movimentar</b> para manter o histórico.</div></div>`,'')}
+
+let stockDirectState={rows:[],images:new Map(),csvName:'',imageSource:'',duplicates:0};
+function stockDirectChooseCsv(){
+ const el=document.getElementById('stockDirectCsv');
+ if(!el){alert('Importador não carregado. Atualize a página com Ctrl+F5.');return}
+ el.value='';el.click();
+}
+async function stockDirectCsvChosen(file){
+ if(!file)return;
+ try{
+  stockDirectState={rows:[],images:new Map(),csvName:file.name,imageSource:'',duplicates:0};
+  let text=(await file.text()).replace(/^\uFEFF/,'');
+  const lines=text.split(/\r?\n/).filter(x=>x.trim());
+  if(lines.length<2)throw new Error('O arquivo não possui produtos.');
+  const sep=lines[0].split(';').length>lines[0].split(',').length?';':',';
+  const heads=stockCsvSplit(lines[0],sep).map(x=>x.trim().toLowerCase());
+  if(!heads.includes('sku')||!heads.includes('nome'))throw new Error('O CSV precisa ter as colunas sku e nome.');
+  const raw=lines.slice(1).map(line=>{const a=stockCsvSplit(line,sep),o={};heads.forEach((h,i)=>o[h]=a[i]??'');return o}).filter(x=>String(x.sku||'').trim());
+  const used=new Map();let dup=0;
+  stockDirectState.rows=raw.map(r=>{
+    let base=String(r.sku||'').trim().toUpperCase(),n=(used.get(base)||0)+1;used.set(base,n);let sku=base;
+    if(n>1){sku=`${base}-${n}`;dup++}
+    return {sku,name:String(r.nome||'').trim(),type:stockGuessType(r.nome||''),unit:'un',unit_cost:stockNum(r.preco),stock_qty:stockNum(r.qtd),min_stock:stockNum(r.qtd_min),location_street:String(r.rua||'').trim().toUpperCase()||null,location_shelf:String(r.prateleira||'').trim().toUpperCase()||null,location_drawer:String(r.gaveta||'').trim().toUpperCase()||null,active:true,legacy_photo:String(r.foto||'').trim()}
+  });
+  stockDirectState.duplicates=dup;
+  stockDirectOpenStep2();
+ }catch(e){alert('Não consegui ler o CSV.\n\n'+(e?.message||e))}
+}
+function stockDirectOpenStep2(){
+ const rows=stockDirectState.rows;
+ openModal('Importar estoque VIMAK',`<div class="stock-import-wizard"><div class="stock-import-intro"><b>✓ ${rows.length} produtos encontrados</b><span>Agora você pode escolher a pasta de fotos. Se preferir, também pode importar primeiro os produtos e colocar as fotos depois.</span></div><div class="stock-direct-options"><button class="btn gold" onclick="stockDirectPickFolder()">📁 Selecionar pasta de imagens</button><button class="btn" onclick="stockDirectPickZip()">🗜 Selecionar ZIP das imagens</button><button class="btn" onclick="stockDirectPreview()">Continuar sem fotos</button></div>${stockDirectState.duplicates?`<div class="stock-import-warning">⚠ ${stockDirectState.duplicates} SKUs repetidos foram preservados com sufixo -2, -3...</div>`:''}<div class="cloudbar">Arquivo: <b>${esc(stockDirectState.csvName)}</b> • Nada foi gravado ainda.</div></div>`,'')
+}
+function stockDirectPickFolder(){const el=document.getElementById('stockDirectImages');if(!el)return alert('Seletor de pasta não disponível.');el.value='';el.click()}
+function stockDirectPickZip(){const el=document.getElementById('stockDirectZip');if(!el)return alert('Seletor ZIP não disponível.');el.value='';el.click()}
+async function stockDirectImagesChosen(files){
+ if(!files||!files.length)return;
+ const map=new Map();
+ for(const f of Array.from(files)){if(!/^image\//.test(f.type)&&!/[.](jpe?g|png|webp)$/i.test(f.name))continue;const b=f.name.split('/').pop().replace(/\.[^.]+$/,'').trim().toUpperCase();map.set(b,f)}
+ stockDirectState.images=map;stockDirectState.imageSource=`${map.size} imagens na pasta`;stockDirectPreview();
+}
+async function stockDirectZipChosen(file){
+ if(!file)return;
+ if(typeof JSZip==='undefined')return alert('Leitor ZIP não carregado. Use a opção de selecionar pasta.');
+ try{const zip=await JSZip.loadAsync(file),map=new Map();for(const [name,e] of Object.entries(zip.files)){if(e.dir||!/[.](jpe?g|png|webp)$/i.test(name))continue;const blob=await e.async('blob');const fname=name.split('/').pop();const f=new File([blob],fname,{type:fname.toLowerCase().endsWith('.png')?'image/png':fname.toLowerCase().endsWith('.webp')?'image/webp':'image/jpeg'});map.set(fname.replace(/\.[^.]+$/,'').trim().toUpperCase(),f)}stockDirectState.images=map;stockDirectState.imageSource=`${map.size} imagens no ZIP`;stockDirectPreview()}catch(e){alert('Não consegui abrir o ZIP.\n\n'+(e?.message||e))}
+}
+function stockDirectImageFor(r){const m=stockDirectState.images;let keys=[String(r.sku||'').toUpperCase(),String(r.legacy_photo||'').replace(/\.[^.]+$/,'').toUpperCase()];const base=String(r.sku||'').replace(/-\d+$/,'').toUpperCase();keys.push(base);for(const k of keys)if(k&&m.has(k))return m.get(k);return null}
+async function stockDirectPreview(){
+ if(!stockDirectState.rows.length)return alert('Selecione primeiro o CSV.');
+ const {data:existing,error}=await sb.from('inputs').select('id,sku,name').eq('company_id',profile.company_id);
+ if(error)return alert('O CRM não conseguiu consultar o estoque no Supabase.\n\n'+error.message);
+ const ex=new Map((existing||[]).map(x=>[String(x.sku||'').toUpperCase(),x]));
+ const upd=stockDirectState.rows.filter(r=>ex.has(r.sku)).length,imgs=stockDirectState.rows.filter(stockDirectImageFor).length;
+ openModal('Conferência da importação',`<div class="stock-import-review"><div class="grid g4"><div class="card kpi"><label>Produtos no CSV</label><strong>${stockDirectState.rows.length}</strong></div><div class="card kpi"><label>Novos</label><strong>${stockDirectState.rows.length-upd}</strong></div><div class="card kpi"><label>Atualizações</label><strong>${upd}</strong></div><div class="card kpi"><label>Fotos vinculadas</label><strong>${imgs}</strong></div></div><div class="stock-import-warning" style="border-left-color:#5da66f">A importação grava primeiro os produtos. As fotos são enviadas depois. Assim, uma foto com problema não impede o cadastro do estoque.</div><div class="cloudbar">${esc(stockDirectState.imageSource||'Sem pasta de imagens selecionada')}</div></div>`,`stockDirectConfirm()`)
+}
+async function stockDirectConfirm(){
+ const rows=stockDirectState.rows;if(!rows.length)return alert('Nenhum produto carregado.');
+ closeModal();
+ let existingRes=await sb.from('inputs').select('id,sku').eq('company_id',profile.company_id);
+ if(existingRes.error)return alert('Falha ao consultar o estoque antes da importação.\n\n'+existingRes.error.message);
+ const ex=new Map((existingRes.data||[]).map(x=>[String(x.sku||'').toUpperCase(),x]));
+ let inserted=0,updated=0,failed=0,photos=0;const errors=[];
+ const newRows=[];
+ for(const r of rows){const p={company_id:profile.company_id,sku:r.sku,name:r.name,type:r.type,unit:r.unit,unit_cost:r.unit_cost,stock_qty:r.stock_qty,min_stock:r.min_stock,location_street:r.location_street,location_shelf:r.location_shelf,location_drawer:r.location_drawer,active:true};const found=ex.get(r.sku);if(found){const {error}=await sb.from('inputs').update(p).eq('id',found.id);if(error){failed++;errors.push(`${r.sku}: ${error.message}`)}else updated++}else newRows.push(p)}
+ // insert in small batches without upsert/onConflict
+ for(let i=0;i<newRows.length;i+=25){const batch=newRows.slice(i,i+25);const {data,error}=await sb.from('inputs').insert(batch).select('id,sku');if(error){failed+=batch.length;errors.push(`Lote ${i+1}-${i+batch.length}: ${error.message}`)}else inserted+=(data||[]).length}
+ if(failed){alert(`A importação encontrou erro no banco.\n\nNovos: ${inserted}\nAtualizados: ${updated}\nFalhas: ${failed}\n\nPrimeiro erro:\n${errors[0]||'Erro não identificado'}`)}
+ // reload IDs then upload photos independently
+ if(stockDirectState.images.size){const cur=await sb.from('inputs').select('id,sku').eq('company_id',profile.company_id);if(!cur.error){const ids=new Map((cur.data||[]).map(x=>[String(x.sku||'').toUpperCase(),x.id]));for(const r of rows){const f=stockDirectImageFor(r),id=ids.get(r.sku);if(!f||!id)continue;try{const ext=(f.name.split('.').pop()||'jpg').toLowerCase();const path=`${profile.company_id}/${id}.${ext}`;const up=await sb.storage.from('input-images').upload(path,f,{upsert:true,contentType:f.type||undefined});if(up.error)continue;const pub=sb.storage.from('input-images').getPublicUrl(path).data.publicUrl;const u=await sb.from('inputs').update({photo_url:pub}).eq('id',id);if(!u.error)photos++}catch(_e){}}}}
+ await refreshCore();render();
+ openModal('Importação concluída',`<div class="stock-import-result"><div class="grid g4"><div class="card kpi"><label>Novos</label><strong>${inserted}</strong></div><div class="card kpi"><label>Atualizados</label><strong>${updated}</strong></div><div class="card kpi"><label>Fotos</label><strong>${photos}</strong></div><div class="card kpi"><label>Falhas</label><strong>${failed}</strong></div></div>${failed?`<div class="stock-import-warning"><b>Primeiro erro do Supabase:</b><br>${esc(errors[0]||'Erro não identificado')}</div>`:`<div class="cloudbar">✓ Produtos gravados no Supabase. O painel já foi atualizado.</div>`}</div>`,'')
+}
+
 let stockImportState={rows:[],images:new Map(),csvName:'',zipName:'',duplicates:0};
 function inputImportWizard(){stockImportState={rows:[],images:new Map(),csvName:'',zipName:'',duplicates:0};openModal('Importação completa de estoque',`<div class="stock-import-wizard"><div class="stock-import-intro"><b>Importe tudo de uma vez</b><span>Selecione sua base CSV e depois a pasta de imagens ou o ZIP. O CRM relaciona as fotos pelo SKU automaticamente e só grava depois da sua confirmação.</span></div><div class="stock-import-steps"><div><strong>1</strong><b>Base de produtos</b><label class="btn gold">Selecionar CSV<input id="stockCsvFile" type="file" accept=".csv,text/csv" hidden onchange="stockImportReadCsv(this.files[0])"></label><small id="stockCsvStatus">Nenhum CSV selecionado</small></div><div><strong>2</strong><b>Pasta de imagens</b><div class="stock-import-image-actions"><label class="btn">Selecionar pasta<input id="stockFolderFile" type="file" webkitdirectory directory multiple hidden onchange="stockImportReadFolder(this.files)"></label><label class="btn">Ou selecionar ZIP<input id="stockZipFile" type="file" accept=".zip,application/zip" hidden onchange="stockImportReadZip(this.files[0])"></label></div><small id="stockZipStatus">Opcional • nenhuma pasta/ZIP selecionado</small></div><div><strong>3</strong><b>Conferir antes de gravar</b><button class="btn" onclick="stockImportPreview()">Ver conferência</button><small>O sistema não grava nada antes da confirmação.</small></div></div><div id="stockImportSummary" class="stock-import-summary"><span>Escolha o CSV para começar.</span></div></div>`,`stockImportPreview()`)}
 function stockCsvSplit(line,sep){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(c===sep&&!q){out.push(cur);cur=''}else cur+=c}out.push(cur);return out}
@@ -2055,7 +2127,7 @@ async function stockImportConfirm(){
  const errHtml=errors.length?`<div class="stock-import-warning"><b>Detalhes que precisam de atenção</b><div style="max-height:180px;overflow:auto;margin-top:8px">${errors.slice(0,30).map(e=>`<div>• ${esc(e)}</div>`).join('')}${errors.length>30?`<div>... e mais ${errors.length-30}</div>`:''}</div></div>`:'';
  openModal('Resultado da importação',`<div class="stock-import-review"><div class="grid g4"><div class="card kpi"><label>Importados</label><strong>${ok}</strong></div><div class="card kpi"><label>Novos</label><strong>${inserted}</strong></div><div class="card kpi"><label>Atualizados</label><strong>${updated}</strong></div><div class="card kpi"><label>Fotos</label><strong>${photos}</strong></div></div>${fail?`<div class="stock-import-warning">⚠ ${fail} produto(s) não foram gravados. Veja os detalhes abaixo.</div>`:`<div class="stock-import-success">✓ Base de estoque carregada com sucesso.</div>`}${errHtml}</div>`,'');
 }
-async function inputImportVimakBase(){inputImportWizard()}
+async function inputImportVimakBase(){stockDirectChooseCsv()}
 async function inputUploadPhoto(id,file){if(!file)return;const x=inputById(id);if(!x)return;const ext=(file.name.split('.').pop()||'jpg').toLowerCase();const path=`${profile.company_id}/${id}-${Date.now()}.${ext}`;toast('Enviando imagem...');const {error:upErr}=await sb.storage.from('input-images').upload(path,file,{upsert:true});if(upErr)return toast('Erro na imagem: '+upErr.message);const {data}=sb.storage.from('input-images').getPublicUrl(path);const {error}=await sb.from('inputs').update({photo_url:data.publicUrl}).eq('id',id);if(error)return toast('Erro: '+error.message);await persistRefresh('Imagem atualizada',{closeModal:true})}
 async function inputMove(id){const x=inputById(id);if(!x)return;openModal('Movimentar estoque',`<div class="stock-move-head"><img src="${inputPhoto(x)}" onerror="this.src='assets/stock/${String(x.sku||'').padStart(3,'0')}.svg'"><div><small>SKU ${esc(x.sku||'—')}</small><h3>${esc(x.name)}</h3><b>Saldo atual: ${inputStock(x)} ${esc(x.unit||'un')}</b></div></div><div class="form-grid"><div class="field"><label>Tipo de movimentação</label><select id="imtype"><option>ENTRADA</option><option>SAÍDA</option><option>AJUSTE +</option><option>AJUSTE -</option><option>DEVOLUÇÃO</option><option>PERDA</option></select></div><div class="field"><label>Quantidade *</label><input id="imqty" type="number" min="0.01" step="0.01" value="1"></div><div class="field full"><label>Motivo / Observação</label><input id="imreason" placeholder="Ex.: Compra Leo Madeiras, consumo projeto cozinha..."></div></div>`,`saveInputMovement('${id}')`)}
 async function saveInputMovement(id){const x=inputById(id),type=imtype.value,qty=Number(imqty.value||0);if(!x||qty<=0)return toast('Informe uma quantidade válida');const before=inputStock(x);const add=['ENTRADA','AJUSTE +','DEVOLUÇÃO'].includes(type);const after=add?before+qty:before-qty;if(after<0)return toast('Estoque insuficiente para esta saída');const movement={company_id:profile.company_id,input_id:id,movement_type:type,qty,stock_before:before,stock_after:after,reason:imreason.value.trim()||null,created_by:session?.user?.id||null};const {error:merr}=await sb.from('input_movements').insert(movement);if(merr)return toast('Erro no histórico: '+merr.message);const {error}=await sb.from('inputs').update({stock_qty:after}).eq('id',id);if(error)return toast('Erro ao atualizar saldo: '+error.message);await persistRefresh(`Movimentação registrada • saldo ${after}`,{closeModal:true})}
@@ -2092,11 +2164,11 @@ function insumos(){
  const valor=cache.inputs.reduce((a,x)=>a+(inputStock(x)*Number(x.unit_cost||0)),0);
  const cards=cache.inputs.map(x=>{const [st,cls]=inputStatus(x);return `<article class="stock-card" data-search="${esc([x.sku,x.name,x.type,x.brand,inputLocation(x),st].join(' ').toLowerCase())}"><div class="stock-card-img"><img src="${inputPhoto(x)}" onerror="this.src='assets/stock/${String(x.sku||'').padStart(3,'0')}.svg'" loading="lazy"><span class="badge ${cls}">${st}</span></div><div class="stock-card-body"><small>SKU ${esc(x.sku||'—')} • ${esc(x.type||'Insumo')}</small><h3>${esc(x.name||'—')}</h3><div class="stock-card-stats"><div><span>Saldo</span><b>${inputStock(x)} ${esc(x.unit||'un')}</b></div><div><span>Custo</span><b>${money(x.unit_cost)}</b></div></div><p>📍 ${esc(inputLocation(x))}</p><div class="stock-card-actions"><button class="btn sm gold" onclick="inputMove('${x.id}')">↕ Movimentar</button><button class="btn sm" onclick="viewInput('${x.id}')">Ver</button><button class="btn sm" onclick="editInput('${x.id}')">Editar</button><button class="btn sm danger" onclick="deleteInput('${x.id}')">Excluir</button></div></div></article>`}).join('');
  return shell("Estoque & Insumos","Controle visual e simples de materiais, ferragens e acessórios da VIMAK",
- `<div class="row-actions"><button class="btn" onclick="inputHelp()">? Como usar</button><button class="btn" onclick="inputImportVimakBase()">⇧ Importar estoque completo</button><button class="btn gold" onclick="addInput()">+ Cadastrar produto</button></div>`,
+ `<div class="row-actions"><button class="btn" onclick="inputHelp()">? Como usar</button><button class="btn" onclick="stockDirectChooseCsv()">⇧ Importar estoque</button><button class="btn gold" onclick="addInput()">+ Cadastrar produto</button></div>`,
  `<div class="grid g5 client-kpis stock-kpis"><div class="card kpi"><label>Produtos</label><strong>${total}</strong></div><div class="card kpi"><label>Ativos</label><strong class="goldtxt">${ativos}</strong></div><div class="card kpi"><label>Estoque baixo</label><strong>${baixos}</strong></div><div class="card kpi"><label>Zerados</label><strong>${zerados}</strong></div><div class="card kpi"><label>Valor em estoque</label><strong>${money(valor)}</strong></div></div>
  <div class="stock-guide"><b>Comece por aqui:</b><span>Para comprar/receber → <strong>Movimentar › Entrada</strong></span><span>Para usar → <strong>Movimentar › Saída</strong></span><span>Para corrigir dados/foto → <strong>Editar</strong></span></div>
  <div class="stock-toolbar"><div class="field grow"><label>🔍 Buscar produto</label><input id="stockSearch" placeholder="Digite SKU, nome, categoria ou localização..." oninput="stockFilterCards(this.value)"></div><div class="field"><label>Mostrar</label><select onchange="stockFilterStatus(this.value)"><option value="">Todos</option><option>Normal</option><option>Baixo</option><option>Zerado</option></select></div></div>
- <div id="stockCards" class="stock-grid">${cards||`<div class="card empty">Nenhum produto cadastrado. Clique em <b>Cadastrar produto</b> ou <b>Importar base VIMAK</b>.</div>`}</div>`);
+ <input id="stockDirectCsv" type="file" accept=".csv,text/csv" hidden onchange="stockDirectCsvChosen(this.files[0])"><input id="stockDirectImages" type="file" accept="image/jpeg,image/png,image/webp" multiple webkitdirectory directory hidden onchange="stockDirectImagesChosen(this.files)"><input id="stockDirectZip" type="file" accept=".zip,application/zip" hidden onchange="stockDirectZipChosen(this.files[0])"><div id="stockCards" class="stock-grid">${cards||`<div class="card empty">Nenhum produto cadastrado. Clique em <b>Cadastrar produto</b> ou <b>Importar base VIMAK</b>.</div>`}</div>`);
 }
 function stockFilterCards(q){q=String(q||'').toLowerCase();document.querySelectorAll('.stock-card').forEach(c=>c.style.display=(c.dataset.search||'').includes(q)?'':'none')}
 function stockFilterStatus(v){document.querySelectorAll('.stock-card').forEach(c=>c.style.display=!v||(c.dataset.search||'').includes(v.toLowerCase())?'':'none')}
