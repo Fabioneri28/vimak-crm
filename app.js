@@ -3871,6 +3871,14 @@ function cutPrint(){
  w.document.close()
 }
 
+function cutLabelAscii(value){
+ return String(value??'')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^\x20-\x7E]/g,' ')
+  .replace(/\s+/g,' ')
+  .trim()
+}
 function cutCode128Svg(value,height=58){
  const P=[
  "212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212",
@@ -3943,8 +3951,8 @@ function cutLabelsOpen(){
    <div class="field"><label>Impressão</label><select id="lblMode"><option value="all">Todas as peças</option><option value="sheet">Somente chapa selecionada</option></select></div>
   </div>
   <div class="label-pro-actions">
-   <button class="btn" onclick="cutLabelsPreview()">Atualizar prévia</button>
-   <button class="btn gold" onclick="cutLabelsPrint()">🏷 Imprimir Etiquetas</button>
+   <button type="button" class="btn" onclick="cutLabelsPreview()">Atualizar prévia</button>
+   <button type="button" class="btn gold" onclick="cutLabelsPrint()">🏷 Imprimir Etiquetas</button>
   </div>
   <div id="labelPreview" class="label-preview-grid"></div>
  </div>`,'');
@@ -4017,9 +4025,17 @@ function cutLabelCard(row,meta){
  </article>`
 }
 function cutLabelsPreview(){
- const box=document.getElementById('labelPreview');if(!box)return;
- const meta=cutLabelMeta(),rows=cutLabelRows().slice(0,4);
- box.innerHTML=rows.map(r=>cutLabelCard(r,meta)).join('');
+ const box=document.getElementById('labelPreview');if(!box)return toast('Área de prévia não encontrada');
+ try{
+  const meta=cutLabelMeta(),rows=cutLabelRows().slice(0,4);
+  if(!rows.length){box.innerHTML='<div class="empty">Nenhuma peça disponível para prévia.</div>';return toast('Nenhuma peça disponível')}
+  box.innerHTML=rows.map(r=>cutLabelCard(r,meta)).join('');
+  toast(`Prévia atualizada • ${rows.length} etiqueta(s) exibida(s)`)
+ }catch(err){
+  console.error('Prévia etiquetas:',err);
+  box.innerHTML='<div class="empty">Falha ao montar a prévia. Verifique o arquivo importado.</div>';
+  toast('Falha ao atualizar a prévia')
+ }
 }
 function cutLabelsPrint(){
  const meta=cutLabelMeta(),rows=cutLabelRows();
