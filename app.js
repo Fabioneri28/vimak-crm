@@ -3939,7 +3939,7 @@ function cutLabelsOpen(){
    <div class="field"><label>Projeto</label><input id="lblProject" value="${esc(c.project)}"></div>
    <div class="field"><label>Ambiente / Módulo</label><input id="lblModule" placeholder="Ex.: Cozinha • Torre quente"></div>
    <div class="field"><label>Ordem / OP</label><input id="lblOrder" value="${esc(c.order)}"></div>
-   <div class="field"><label>Tamanho da etiqueta</label><select id="lblSize"><option value="100x70">100 × 70 mm</option><option value="90x50">90 × 50 mm</option><option value="80x50">80 × 50 mm</option></select></div>
+   <div class="field"><label>Tamanho da etiqueta</label><select id="lblSize"><option value="100x70">100 × 70 mm</option><option value="90x50" selected>90 × 50 mm</option><option value="80x50">80 × 50 mm</option></select></div>
    <div class="field"><label>Impressão</label><select id="lblMode"><option value="all">Todas as peças</option><option value="sheet">Somente chapa selecionada</option></select></div>
   </div>
   <div class="label-pro-actions">
@@ -3956,14 +3956,35 @@ function cutLabelMeta(){
   project:document.getElementById('lblProject')?.value.trim()||'Sem projeto',
   module:document.getElementById('lblModule')?.value.trim()||'Sem módulo',
   order:document.getElementById('lblOrder')?.value.trim()||'AVULSO',
-  size:document.getElementById('lblSize')?.value||'100x70'
+  size:document.getElementById('lblSize')?.value||'90x50'
  }
+}
+function cutEdgeValue(v){return String(v||'').trim()}
+function cutEdgeInfo(p){
+ const sides={top:cutEdgeValue(p.edgeTop),bottom:cutEdgeValue(p.edgeBottom),left:cutEdgeValue(p.edgeLeft),right:cutEdgeValue(p.edgeRight)};
+ const explicit=Object.values(sides).some(Boolean);
+ return {sides,explicit,generic:cutEdgeValue(p.edge||p.tape||p.fita)}
+}
+function cutEdgeDiagram(p){
+ const e=cutEdgeInfo(p),w=Math.max(1,Number(p.w||p.pw||1)),h=Math.max(1,Number(p.h||p.ph||1));
+ const ratio=Math.max(.42,Math.min(2.4,w/h));
+ const rw=ratio>=1?76:Math.max(36,76*ratio),rh=ratio>=1?Math.max(30,58/ratio):58;
+ const x=(92-rw)/2,y=(68-rh)/2;
+ const on=k=>!!e.sides[k];
+ const thick=6,thin=1.5;
+ const edge=(k,x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${on(k)?'#111':'#b8b8b8'}" stroke-width="${on(k)?thick:thin}" stroke-linecap="square"/>`;
+ const txt=e.explicit?['top','right','bottom','left'].filter(on).map(k=>({top:'↑',right:'→',bottom:'↓',left:'←'}[k])).join(' '):(e.generic?'FITA • LADO NÃO DEFINIDO':'SEM FITA INFORMADA');
+ return `<div class="edge-map"><svg viewBox="0 0 92 68" aria-label="Mapa de fitas de borda"><rect x="${x}" y="${y}" width="${rw}" height="${rh}" fill="#fafafa" stroke="#b8b8b8" stroke-width="1"/>${edge('top',x,y,x+rw,y)}${edge('right',x+rw,y,x+rw,y+rh)}${edge('bottom',x,y+rh,x+rw,y+rh)}${edge('left',x,y,x,y+rh)}<text x="46" y="34" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="800" fill="#333">${Math.round(w)}×${Math.round(h)}</text></svg><small>${esc(txt)}</small></div>`
+}
+function cutEdgeText(p){
+ const e=cutEdgeInfo(p),a=[];
+ if(e.sides.top)a.push(`Cima: ${e.sides.top}`);if(e.sides.bottom)a.push(`Baixo: ${e.sides.bottom}`);if(e.sides.left)a.push(`Esq.: ${e.sides.left}`);if(e.sides.right)a.push(`Dir.: ${e.sides.right}`);
+ return a.length?a.join(' • '):(e.generic||'—')
 }
 function cutLabelCard(row,meta){
  const p=row.piece;
  const code1=`${meta.order}-${row.label}`;
  const code2=cutLabelAscii(p.code||p.id||row.label).slice(0,36);
- const edge=p.edge||'—';
  const grain=p.grain?'Sim':'Não';
  return `<article class="prod-label">
   <div class="prod-label-main">
@@ -3971,23 +3992,26 @@ function cutLabelCard(row,meta){
     <div><b>VIMAK</b><span>ETIQUETA DE PRODUÇÃO</span></div>
     <div class="prod-label-id"><small>Chapa ${row.sheet}</small><strong>${row.label}</strong></div>
    </div>
-   <div class="prod-label-info">
-    <div><span>Cliente</span><b>${esc(meta.client)}</b></div>
-    <div><span>Projeto</span><b>${esc(meta.project)}</b></div>
-    <div><span>Ambiente / Módulo</span><b>${esc(meta.module)}</b></div>
-    <div><span>Peça</span><b>${esc(p.name||'Peça')}</b></div>
+   <div class="prod-label-upper">
+    <div class="prod-label-info">
+     <div><span>Cliente</span><b>${esc(meta.client)}</b></div>
+     <div><span>Projeto</span><b>${esc(meta.project)}</b></div>
+     <div><span>Ambiente / Módulo</span><b>${esc(meta.module)}</b></div>
+     <div><span>Peça</span><b>${esc(p.name||'Peça')}</b></div>
+    </div>
+    ${cutEdgeDiagram(p)}
    </div>
    <div class="prod-label-spec">
     <div><span>Dimensão</span><strong>${p.w} × ${p.h} × ${p.t} mm</strong></div>
     <div><span>Material</span><strong>${esc(p.material||'MDF')}</strong></div>
     <div><span>Veio</span><b>${grain}</b></div>
-    <div><span>Fita / Borda</span><b>${esc(edge)}</b></div>
    </div>
-   <div class="prod-label-bar">${cutCode128Svg(code1,48)}</div>
-   <div class="prod-label-code"><span>Cód. Programa / Peça</span>${cutCode128Svg(code2,44)}</div>
+   <div class="prod-label-edge"><span>FITAS DE BORDA</span><b>${esc(cutEdgeText(p))}</b></div>
+   <div class="prod-label-bar">${cutCode128Svg(code1,40)}</div>
+   <div class="prod-label-code"><span>Cód. Programa / Peça</span>${cutCode128Svg(code2,34)}</div>
   </div>
   <div class="prod-label-side">
-   <div class="side-code">${cutCode128Svg(code1,42)}</div>
+   <div class="side-code">${cutCode128Svg(code1,38)}</div>
    <b>${esc(code1)}</b>
   </div>
  </article>`
@@ -3998,14 +4022,22 @@ function cutLabelsPreview(){
  box.innerHTML=rows.map(r=>cutLabelCard(r,meta)).join('');
 }
 function cutLabelsPrint(){
- const meta=cutLabelMeta();
- const rows=cutLabelRows();
+ const meta=cutLabelMeta(),rows=cutLabelRows();
  if(!rows.length)return toast('Nenhuma peça otimizada');
- const [wm,hm]=(meta.size||'100x70').split('x').map(Number);
- const w=window.open('','_blank');
- const css=`@page{margin:5mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;color:#111}.print-grid{display:grid;grid-template-columns:repeat(2,${wm}mm);gap:4mm;align-items:start}.prod-label{width:${wm}mm;height:${hm}mm;border:1.2px solid #111;display:grid;grid-template-columns:1fr 16mm;overflow:hidden;page-break-inside:avoid;background:#fff}.prod-label-main{padding:3mm;display:flex;flex-direction:column;gap:1.5mm;min-width:0}.prod-label-head{display:flex;justify-content:space-between;border-bottom:1px solid #222;padding-bottom:1.5mm}.prod-label-head b{font-size:15pt}.prod-label-head span{display:block;font-size:6.5pt;letter-spacing:.7px}.prod-label-id{text-align:right}.prod-label-id small{display:block;font-size:7pt}.prod-label-id strong{font-size:13pt}.prod-label-info{display:grid;grid-template-columns:1fr 1fr;gap:1mm 3mm}.prod-label-info span,.prod-label-spec span,.prod-label-code>span{font-size:6.2pt;color:#555;display:block}.prod-label-info b{font-size:8pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.prod-label-spec{display:grid;grid-template-columns:1.35fr 1.3fr .55fr .8fr;border-top:1px solid #bbb;border-bottom:1px solid #bbb;padding:1.2mm 0;gap:2mm}.prod-label-spec strong,.prod-label-spec b{font-size:7.5pt}.label-barcode{width:100%;height:13mm;display:block}.prod-label-code .label-barcode{height:10mm}.prod-label-side{border-left:1px solid #111;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}.prod-label-side .side-code{width:${Math.max(42,hm-10)}mm;transform:rotate(90deg);transform-origin:center}.prod-label-side b{position:absolute;right:1mm;bottom:2mm;writing-mode:vertical-rl;font-size:6pt}.prod-label-bar{margin-top:auto}`;
- w.document.write(`<html><head><title>Etiquetas de Produção • ${esc(meta.project)}</title><style>${css}</style></head><body><div class="print-grid">${rows.map(r=>cutLabelCard(r,meta)).join('')}</div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
- w.document.close()
+ const [wm,hm]=(meta.size||'90x50').split('x').map(Number);
+ const css=`@page{size:auto;margin:4mm}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#111}.print-grid{display:grid;grid-template-columns:repeat(2,${wm}mm);gap:3mm;align-items:start}.prod-label{width:${wm}mm;height:${hm}mm;border:1px solid #111;display:grid;grid-template-columns:minmax(0,1fr) 12mm;overflow:hidden;page-break-inside:avoid;break-inside:avoid;background:#fff}.prod-label-main{padding:1.8mm;display:flex;flex-direction:column;gap:.7mm;min-width:0}.prod-label-head{display:flex;justify-content:space-between;border-bottom:.25mm solid #222;padding-bottom:.7mm}.prod-label-head b{font-size:10.5pt;letter-spacing:.4mm}.prod-label-head span{display:block;font-size:4.6pt;letter-spacing:.3mm}.prod-label-id{text-align:right}.prod-label-id small{display:block;font-size:4.6pt}.prod-label-id strong{font-size:9pt}.prod-label-upper{display:grid;grid-template-columns:minmax(0,1fr) 23mm;gap:1.5mm;align-items:center}.prod-label-info{display:grid;grid-template-columns:1fr 1fr;gap:.5mm 1.5mm}.prod-label-info span,.prod-label-spec span,.prod-label-code>span,.prod-label-edge span{font-size:4.4pt;color:#555;display:block}.prod-label-info b{font-size:5.8pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.edge-map{border:.25mm solid #ddd;border-radius:1mm;padding:.5mm;text-align:center;height:16mm}.edge-map svg{display:block;width:100%;height:11.5mm}.edge-map small{display:block;font-size:3.6pt;font-weight:800;line-height:1}.prod-label-spec{display:grid;grid-template-columns:1.35fr 1.35fr .45fr;border-top:.2mm solid #bbb;border-bottom:.2mm solid #bbb;padding:.6mm 0;gap:1mm}.prod-label-spec strong,.prod-label-spec b{font-size:5.4pt}.prod-label-edge{display:grid;grid-template-columns:19mm 1fr;align-items:center;gap:1mm;border-bottom:.2mm solid #ddd;padding-bottom:.5mm}.prod-label-edge b{font-size:4.8pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.label-barcode{width:100%;height:8mm;display:block}.prod-label-code .label-barcode{height:6.2mm}.prod-label-side{border-left:.25mm solid #111;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}.prod-label-side .side-code{width:${Math.max(34,hm-8)}mm;transform:rotate(90deg);transform-origin:center}.prod-label-side b{position:absolute;right:.7mm;bottom:1mm;writing-mode:vertical-rl;font-size:4.4pt}.prod-label-bar{margin-top:auto}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`;
+ const html=`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas de Produção • ${esc(meta.project)}</title><style>${css}</style></head><body><div class="print-grid">${rows.map(r=>cutLabelCard(r,meta)).join('')}</div></body></html>`;
+ let frame=document.getElementById('vimakLabelPrintFrame');
+ if(frame)frame.remove();
+ frame=document.createElement('iframe');frame.id='vimakLabelPrintFrame';frame.setAttribute('aria-hidden','true');frame.style.position='fixed';frame.style.right='0';frame.style.bottom='0';frame.style.width='1px';frame.style.height='1px';frame.style.border='0';frame.style.opacity='0';document.body.appendChild(frame);
+ try{
+  const doc=frame.contentWindow.document;doc.open();doc.write(html);doc.close();
+  const doPrint=()=>{try{frame.contentWindow.focus();frame.contentWindow.print();toast(`${rows.length} etiquetas enviadas para impressão`)}catch(err){console.error(err);toast('Falha ao abrir a impressão das etiquetas')}};
+  if(doc.readyState==='complete')setTimeout(doPrint,180);else frame.onload=()=>setTimeout(doPrint,180)
+ }catch(err){
+  console.error('Etiquetas impressão:',err);
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);toast('Prévia de impressão aberta em nova aba')
+ }
 }
 
 function cutLabelsFromPlan(id){
