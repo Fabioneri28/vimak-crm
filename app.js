@@ -894,10 +894,30 @@ function refreshProposalDraft(){
       <div class="proposal-margin"><span>Margem bruta estimada</span><b class="${m.margin>=0?"green":"red"}">${money(m.margin)} • ${m.marginPct.toFixed(1)}%</b></div>`;
   }
 }
+function refreshProposalSummaryOnly(){
+  const summary=document.getElementById("proposalSummary");
+  if(summary){
+    const m=proposalMetricsFromDraft();
+    summary.innerHTML=`
+      <div><span>Subtotal dos itens</span><b>${money(m.subtotal)}</b></div>
+      <div><span>Custo estimado</span><b>${money(m.cost)}</b></div>
+      <div><span>Desconto</span><b>- ${money(m.discount)}</b></div>
+      <div><span>Montagem + frete</span><b>${money(m.assembly+m.freight)}</b></div>
+      <div class="proposal-total-line"><span>VALOR FINAL</span><strong>${money(m.total)}</strong></div>
+      <div class="proposal-margin"><span>Margem bruta estimada</span><b class="${m.margin>=0?"green":"red"}">${money(m.margin)} • ${m.marginPct.toFixed(1)}%</b></div>`;
+  }
+}
 function updateProposalDraftItem(idx,key,value){
   if(!proposalDraftItems[idx])return;
   proposalDraftItems[idx][key]=["qty","cost","unit_price"].includes(key)?Number(value||0):value;
-  refreshProposalDraft();
+  // Não reconstruir a tabela durante a digitação: isso destruía o input ativo
+  // e fazia o foco sair do campo a cada tecla. Atualizamos apenas os cálculos.
+  const row=document.querySelector(`#proposalItemRows tr:nth-child(${idx+1})`);
+  if(row){
+    const totalCell=row.children[6];
+    if(totalCell) totalCell.innerHTML=`<b class="goldtxt">${money(proposalItemTotal(proposalDraftItems[idx]))}</b>`;
+  }
+  refreshProposalSummaryOnly();
 }
 function addProposalInputItem(){
   const id=document.getElementById("proposalInputPick")?.value;
