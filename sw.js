@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-13-11-21-fechamento-sistema';
+const CACHE = 'vimak-crm-v6-25-estavel';
 
 const ASSETS = [
   './',
@@ -7,7 +7,7 @@ const ASSETS = [
   './app.js',
   './config.js',
   './manifest.webmanifest',
-  './notifications-v6249.js',
+  './notifications-v62420.js',
   './captura.html',
   './captura.css',
   './captura.js'
