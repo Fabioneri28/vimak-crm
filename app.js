@@ -362,7 +362,7 @@ function p360FinancialPanel(m){
 }
 function vimakBackup(){
  try{
-  const payload={app:'VIMAK CRM',version:'6.24.13.11.17',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
+  const payload={app:'VIMAK CRM',version:'6.24.13.11.18',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download=`VIMAK_BACKUP_${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Backup operacional gerado');
  }catch(e){toast('Não foi possível gerar o backup: '+e.message)}
@@ -382,6 +382,7 @@ function projeto360(){
  `<div class="p360-hero"><div><span>ORDEM MESTRE VIMAK</span><h2>${esc(c.name)}</h2><p>${esc(c.phone||c.whatsapp||'')} ${c.email?'• '+esc(c.email):''}</p></div><div class="p360-health"><small>STATUS FINANCEIRO</small><b class="${late.length?'red':'green'}">${late.length?late.length+' VENCIDA(S)':'EM DIA'}</b></div></div>
  <div class="p360-kpis">${p360Card('VENDA APROVADA',dbMoney(m.sales),m.proposals.length+' proposta(s)','goldtxt')}${p360Card('RECEBIDO',dbMoney(m.received),'realizado','green')}${p360Card('A RECEBER',dbMoney(m.receivable),openAR.length+' parcela(s)')}${p360Card('CUSTO / A PAGAR',dbMoney(m.paid+m.payable),'realizado + previsto')}${p360Card('MARGEM PROJETADA',dbMoney(m.margin),'venda − custos','goldtxt')}</div>
  ${p360AutomationPanel(id,m)}
+ ${p360HealthPanel(id,m)}
  ${p360FinancialPanel(m)}
  <section class="card p360-flow"><div class="db-panel-head"><div><span>FLUXO DO PROJETO</span><h3>Da venda ao pós-venda</h3></div></div><div class="p360-stage-row">${stages.map((x,i)=>`<button onclick="location.hash='${x[2]}'"><i>${x[1]?'✓':i+1}</i><span>${x[0]}</span><b>${x[1]} registro(s)</b></button>`).join('')}</div></section>
  <div class="p360-grid"><section class="card"><div class="db-panel-head"><div><span>FINANCEIRO DO PROJETO</span><h3>Recebimentos</h3></div><b>${dbMoney(m.receivable)}</b></div><div class="p360-list">${m.ar.slice(0,10).map(x=>`<div><span>${esc(x.description||'Recebimento')}<small>${x.due_date?new Date(x.due_date+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</small></span><b>${dbMoney(x.amount||x.value)}</b><em class="${p360OpenStatus(x)?'goldtxt':'green'}">${esc(x.status||'Aberto')}</em></div>`).join('')||'<div class="empty">Sem contas vinculadas.</div>'}</div></section>
@@ -401,6 +402,45 @@ function dbToday(){
  return `<section class="card db-today"><div class="db-panel-head"><div><span>CENTRAL DE PENDÊNCIAS</span><h3>Hoje na VIMAK</h3></div><b>${new Date().toLocaleDateString('pt-BR')}</b></div><div class="db-today-grid">${items.map(x=>`<button onclick="location.hash='${x[3]}'"><small>${x[0]}</small><b>${x[1]}</b><span>${x[2]}</span><strong>ABRIR ›</strong></button>`).join('')}</div></section>`
 }
 
+
+// ===== V6.24.13.11.18 • INTELIGÊNCIA PREVENTIVA =====
+function p360Health(id,m){
+ const now=new Date();
+ const lateAR=m.ar.filter(x=>p360OpenStatus(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now);
+ const lateAP=m.ap.filter(x=>p360OpenStatus(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now);
+ const lateProd=m.prod.filter(x=>p360OpenStatus(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now);
+ const lateMount=m.sched.filter(x=>p360OpenStatus(x)&&x.ends_at&&new Date(x.ends_at)<now);
+ const approved=m.proposals.some(x=>['Aprovado','Fechado','Produção','Finalizado'].includes(dbStatus(x)));
+ let finance=100-Math.min(100,lateAR.length*28+lateAP.length*18), deadline=100-Math.min(100,lateProd.length*35+lateMount.length*35);
+ let operation=approved?100:55;
+ if(approved&&!m.measures.length)operation-=18;if(m.measures.length&&!m.purchases.length)operation-=12;if(m.purchases.length&&!m.prod.length)operation-=15;if(m.prod.length&&!m.sched.length)operation-=10;
+ operation=Math.max(0,operation);
+ const data=Math.max(30,100-Math.min(60,[m.proposals,m.measures,m.purchases,m.prod,m.sched].filter(a=>!a.length).length*10));
+ const score=Math.round(finance*.35+deadline*.30+operation*.25+data*.10);
+ const level=score>=80?'green':score>=60?'yellow':'red', label=score>=80?'DENTRO DO CONTROLE':score>=60?'ATENÇÃO':'AÇÃO NECESSÁRIA';
+ return {score,level,label,finance,deadline,operation,data,lateAR,lateAP,lateProd,lateMount};
+}
+function p360HealthPanel(id,m){
+ const h=p360Health(id,m), rows=[['Financeiro',h.finance],['Prazo',h.deadline],['Operação',h.operation],['Dados',h.data]];
+ return `<section class="card"><div class="db-panel-head"><div><span>SAÚDE DO PROJETO</span><h3>Semáforo operacional</h3></div><b class="health-${h.level}">${h.score}/100</b></div><div class="p360-healthbox"><div class="p360-score health-${h.level}"><i>${h.level==='green'?'🟢':h.level==='yellow'?'🟡':'🔴'}</i><b>${h.label}</b><small>Índice calculado com financeiro, prazo e execução</small></div><div class="p360-healthlines">${rows.map(r=>`<div class="p360-healthline health-${r[1]>=80?'green':r[1]>=60?'yellow':'red'}"><span>${r[0]}</span><div class="bar"><i style="width:${Math.max(0,r[1])}%"></i></div><b>${Math.round(r[1])}%</b></div>`).join('')}</div></div></section>`;
+}
+function vimakPriorityData(){
+ const now=new Date(),today=now.toISOString().slice(0,10),soon=new Date(now);soon.setDate(soon.getDate()+3);
+ const open=x=>!['Pago','Recebido','Baixado','Liquidado','Concluído','Finalizado','Entregue','Cancelado'].includes(dbStatus(x));
+ let out=[];
+ (cache.accountsReceivable||[]).filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now).forEach(x=>out.push({w:100,level:'critical',tag:'VENCIDO',title:x.description||'Conta a receber vencida',sub:`${p360ClientName(p360FindClientId(x))} • ${x.due_date?new Date(x.due_date+'T12:00:00').toLocaleDateString('pt-BR'):''}`,value:dbMoney(x.amount||x.value),hash:'financeiro'}));
+ (cache.accountsPayable||[]).filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now).forEach(x=>out.push({w:95,level:'critical',tag:'PAGAR',title:x.description||'Conta a pagar vencida',sub:x.supplier_name||'Financeiro',value:dbMoney(x.amount||x.value),hash:'financeiro'}));
+ (cache.productionProjects||[]).filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now).forEach(x=>out.push({w:90,level:'critical',tag:'PRODUÇÃO',title:x.title||x.name||'Produção atrasada',sub:p360ClientName(p360FindClientId(x)),value:'ABRIR',hash:'kanban'}));
+ (cache.purchaseOrders||[]).filter(x=>open(x)&&x.expected_at&&new Date(x.expected_at)<now).forEach(x=>out.push({w:85,level:'attention',tag:'COMPRA',title:x.number||x.supplier_name||'Compra atrasada',sub:x.supplier_name||'Material pendente',value:'ABRIR',hash:'compras'}));
+ (cache.installationSchedule||[]).filter(x=>open(x)&&x.starts_at&&new Date(x.starts_at)<=soon&&new Date(x.starts_at)>=now).forEach(x=>out.push({w:75,level:'attention',tag:'MONTAGEM',title:'Montagem próxima',sub:`${p360ClientName(p360FindClientId(x))} • ${new Date(x.starts_at).toLocaleDateString('pt-BR')}`,value:'AGENDA',hash:'agenda'}));
+ (cache.accountsReceivable||[]).filter(x=>open(x)&&x.due_date&&String(x.due_date).slice(0,10)===today).forEach(x=>out.push({w:80,level:'attention',tag:'RECEBER',title:x.description||'Recebimento de hoje',sub:p360ClientName(p360FindClientId(x)),value:dbMoney(x.amount||x.value),hash:'financeiro'}));
+ return out.sort((a,b)=>b.w-a.w).slice(0,12);
+}
+function vimakPriorityPanel(){
+ const rows=vimakPriorityData();
+ return `<section class="card priority-center"><div class="db-panel-head"><div><span>PRIORIDADE AUTOMÁTICA</span><h3>O que precisa da sua atenção primeiro</h3></div><b>${rows.length}</b></div><div class="priority-list">${rows.length?rows.map(x=>`<button class="priority-item" onclick="location.hash='${x.hash}'"><span class="priority-badge ${x.level}">${x.tag}</span><span><strong>${esc(x.title)}</strong><small>${esc(x.sub||'')}</small></span><em>${x.value}</em></button>`).join(''):'<div class="empty">Nenhuma pendência crítica encontrada. Operação sob controle.</div>'}</div></section>`;
+}
+
 function dashboard(){
   const activeLeads=cache.leads.filter(x=>!['Pós-venda','Perdido','Cancelado'].includes(dbLeadStage(x)));
   const pipeline=activeLeads.reduce((a,x)=>a+dbLeadValue(x),0);
@@ -417,6 +457,8 @@ function dashboard(){
   `<div class="db-command"><div><span class="measurement-version">V6.21 • CEO COMMAND CENTER</span><h2>VIMAK Executive Intelligence</h2><p>Uma visão única do negócio: vendas, execução, caixa, produtividade e riscos.</p></div><div class="db-health"><span>BUSINESS HEALTH</span><b class="${receber+forecast-pagar>=0?'green':'red'}">${receber+forecast-pagar>=0?'SAUDÁVEL':'ATENÇÃO'}</b></div></div>
 
   ${dbToday()}
+
+  ${vimakPriorityPanel()}
 
   <div class="grid g4 proposal-kpis">
     <div class="card kpi"><label>Pipeline Comercial</label><strong>${dbMoney(pipeline)}</strong><small>${activeLeads.length} oportunidades</small></div>
