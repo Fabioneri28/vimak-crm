@@ -4618,15 +4618,69 @@ async function finCreateBudget(){
  let r=await sb.from('finance_budgets').insert({company_id:profile.company_id,name:`Budget ${y}`,year:y,status:'Rascunho',currency:'BRL'});if(r.error)return toast('Erro: '+r.error.message);
  await persistRefresh('Budget criado')
 }
+
+// =============================================================
+// V6.24.13.11.15 • PIX PARCELADO VIMAK / RECEBIMENTO MENSAL
+// Gera entrada + parcelas mensais diretamente em accounts_receivable.
+// =============================================================
+function finPixDateAddMonths(iso,months){
+ const [y,m,d]=String(iso||'').split('-').map(Number);if(!y||!m||!d)return '';
+ const target=new Date(y,m-1+Number(months||0),1),last=new Date(target.getFullYear(),target.getMonth()+1,0).getDate();
+ return `${target.getFullYear()}-${String(target.getMonth()+1).padStart(2,'0')}-${String(Math.min(d,last)).padStart(2,'0')}`
+}
+function finPixPlanCalc(){
+ const total=Number(document.getElementById('fppTotal')?.value||0),entry=Number(document.getElementById('fppEntry')?.value||0),n=Math.max(1,Number(document.getElementById('fppN')?.value||1)),manual=Number(document.getElementById('fppInstallment')?.value||0),mode=document.getElementById('fppMode')?.value||'total';
+ let installment=mode==='installment'?manual:Math.max(0,(total-entry)/n),contract=mode==='installment'?entry+(manual*n):total;
+ return {total:contract,entry,n,installment,balance:installment*n};
+}
+function finPixPlanPreview(){
+ const h=document.getElementById('fppPreview');if(!h)return;const c=finPixPlanCalc(),first=document.getElementById('fppFirst')?.value||'',entryDate=document.getElementById('fppEntryDate')?.value||'';
+ h.innerHTML=`<div class="fin-pix-kpis"><div><small>CONTRATO</small><b>${money(c.total)}</b></div><div><small>ENTRADA</small><b>${money(c.entry)}</b></div><div><small>SALDO PARCELADO</small><b>${money(c.balance)}</b></div><div><small>PARCELAS PIX</small><b>${c.n}x de ${money(c.installment)}</b></div></div>
+ <div class="fin-pix-schedule"><div><b>Entrada</b><span>${entryDate?finDate(entryDate):'Defina a data'}</span><strong>${money(c.entry)}</strong></div>${Array.from({length:c.n},(_,i)=>`<div><b>Parcela ${i+1}/${c.n}</b><span>${first?finDate(finPixDateAddMonths(first,i)):'Defina o 1º vencimento'}</span><strong>${money(c.installment)}</strong></div>`).join('')}</div>`;
+}
+function finPixPlanOpen(){
+ const today=new Date().toISOString().slice(0,10),next=finPixDateAddMonths(today,1);
+ openModal('PIX Parcelado • Recebimento Mensal',`<div class="fin-pix-intro"><b>Parcelamento próprio VIMAK via PIX</b><span>Gera automaticamente a entrada e todas as contas a receber mensais, sem taxa de maquininha.</span></div><div class="form-grid">
+ <div class="field full"><label>Cliente</label><select id="fppClient"><option value="">Selecione o cliente</option>${cache.clients.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
+ <div class="field full"><label>Descrição / Projeto</label><input id="fppDesc" placeholder="Ex.: Cozinha planejada • Contrato 2026"></div>
+ <div class="field"><label>Modo de cálculo</label><select id="fppMode" onchange="finPixPlanMode();finPixPlanPreview()"><option value="total">Total + entrada → calcular parcela</option><option value="installment">Entrada + parcela → calcular total</option></select></div>
+ <div class="field"><label>Valor total do contrato</label><input id="fppTotal" type="number" step=".01" value="17840" oninput="finPixPlanPreview()"></div>
+ <div class="field"><label>Entrada</label><input id="fppEntry" type="number" step=".01" value="10000" oninput="finPixPlanPreview()"></div>
+ <div class="field"><label>Quantidade de parcelas</label><input id="fppN" type="number" min="1" max="60" value="8" oninput="finPixPlanPreview()"></div>
+ <div class="field"><label>Valor da parcela</label><input id="fppInstallment" type="number" step=".01" value="980" disabled oninput="finPixPlanPreview()"></div>
+ <div class="field"><label>Data da entrada</label><input id="fppEntryDate" type="date" value="${today}" onchange="finPixPlanPreview()"></div>
+ <div class="field"><label>1º vencimento mensal</label><input id="fppFirst" type="date" value="${next}" onchange="finPixPlanPreview()"></div>
+ <div class="field"><label>Centro de custo</label><select id="fppCC"><option value="">Sem centro</option>${cache.costCenters.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
+ <div class="field"><label>Conta bancária</label><select id="fppBank"><option value="">Não definida</option>${cache.bankAccounts.map(x=>`<option value="${x.id}">${esc(x.name||x.bank_name||'Conta')}</option>`).join('')}</select></div>
+ <div class="field full"><label class="fin-pix-check"><input id="fppEntryPaid" type="checkbox" checked> Entrada já recebida via PIX</label></div></div><div id="fppPreview"></div>`,`finPixPlanSave()`);
+ setTimeout(finPixPlanPreview,0)
+}
+function finPixPlanMode(){const mode=document.getElementById('fppMode')?.value||'total',a=document.getElementById('fppTotal'),b=document.getElementById('fppInstallment');if(a)a.disabled=mode==='installment';if(b)b.disabled=mode!=='installment'}
+async function finPixPlanSave(){
+ const client=document.getElementById('fppClient')?.value||null,desc=document.getElementById('fppDesc')?.value.trim(),entryDate=document.getElementById('fppEntryDate')?.value,first=document.getElementById('fppFirst')?.value,cc=document.getElementById('fppCC')?.value||null,bank=document.getElementById('fppBank')?.value||null,entryPaid=!!document.getElementById('fppEntryPaid')?.checked,c=finPixPlanCalc();
+ if(!client||!desc||!entryDate||!first||c.total<=0||c.entry<0||c.installment<=0)return toast('Preencha cliente, descrição, datas e valores do parcelamento');
+ if(c.entry>c.total)return toast('A entrada não pode ser maior que o total do contrato');
+ const batch=`PIX-${Date.now().toString(36).toUpperCase()}`,rows=[];
+ if(c.entry>0)rows.push({company_id:profile.company_id,client_id:client,description:`${desc} • PIX Parcelado • Entrada • ${batch}`,amount:+c.entry.toFixed(2),due_date:entryDate,status:entryPaid?'Recebido':'Aberto',paid_at:entryPaid?new Date(entryDate+'T12:00:00').toISOString():null,payment_method:'Pix',bank_account_id:bank,cost_center_id:cc,notes:`PIX Parcelado VIMAK • Entrada de ${money(c.entry)} • ${c.n} parcelas mensais • Total ${money(c.total)} • Ref. ${batch}`});
+ for(let i=0;i<c.n;i++)rows.push({company_id:profile.company_id,client_id:client,description:`${desc} • PIX Parcelado • Parcela ${i+1}/${c.n} • ${batch}`,amount:+c.installment.toFixed(2),due_date:finPixDateAddMonths(first,i),status:'Aberto',payment_method:'Pix',bank_account_id:bank,cost_center_id:cc,notes:`PIX Parcelado VIMAK • Parcela ${i+1}/${c.n} • Entrada ${money(c.entry)} • Total ${money(c.total)} • Ref. ${batch}`});
+ const r=await sb.from('accounts_receivable').insert(rows);if(r.error){console.error('[PIX Parcelado]',r.error,rows);return toast('Erro ao gerar recebimentos: '+r.error.message)}
+ await refreshCore();closeModal();finTab='receber';render();toast(`PIX Parcelado criado • ${rows.length} contas a receber • ${money(c.total)}`)
+}
+function finPixPlanPanel(){
+ const rows=(cache.accountsReceivable||[]).filter(x=>String(x.description||'').includes('PIX Parcelado')),
+ open=rows.filter(x=>finOpenStatus(x.status)),received=rows.filter(x=>!finOpenStatus(x.status));
+ return `<div class="card"><div class="fin-panel-head"><div><span>PIX PARCELADO VIMAK</span><h3>Recebimentos mensais</h3></div><button class="btn gold" onclick="finPixPlanOpen()">+ Novo PIX Parcelado</button></div><div class="grid g3 proposal-kpis"><div class="card kpi"><label>A receber</label><strong class="green">${money(open.reduce((a,x)=>a+finNum(x.amount),0))}</strong></div><div class="card kpi"><label>Recebido</label><strong>${money(received.reduce((a,x)=>a+finNum(x.amount),0))}</strong></div><div class="card kpi"><label>Parcelas em aberto</label><strong>${open.length}</strong></div></div><div class="notice">Cada parcela é uma conta a receber real do Financeiro. Ao receber o PIX, use <b>Receber</b> para dar baixa. As parcelas futuras entram automaticamente na projeção de caixa.</div>${finTable('receber')}</div>`
+}
+
 function finGovernance(){let pending=cache.financeApprovals.filter(x=>x.status==='Pendente'),entities=cache.financeEntities;return `<div class="fin-row3"><section class="card"><div class="fin-panel-head"><div><span>GOVERNANÇA</span><h3>Alçadas & Aprovações</h3></div><b>${pending.length}</b></div><p class="fin-copy">Fluxos de aprovação para pagamentos, despesas e exceções financeiras.</p><div class="fin-risks">${pending.slice(0,10).map(x=>`<div class="gold"><b>${esc(x.request_type||'Aprovação')}</b><span>${money(x.amount)} • ${esc(x.status)}</span></div>`).join('')||'<div class="ok"><b>Fila limpa</b><span>Sem aprovações pendentes.</span></div>'}</div></section><section class="card"><div class="fin-panel-head"><div><span>MULTI-ENTITY</span><h3>Empresas & Unidades</h3></div><b>${entities.length||1}</b></div><p class="fin-copy">Estrutura preparada para filiais, holdings, moedas e consolidação futura.</p>${entities.map(x=>`<div class="fin-entity"><b>${esc(x.name)}</b><span>${esc(x.country||'Brasil')} • ${esc(x.currency||'BRL')}</span></div>`).join('')||'<div class="fin-entity"><b>VIMAK Planejados</b><span>Entidade principal • BRL</span></div>'}</section><section class="card"><div class="fin-panel-head"><div><span>AUDIT READY</span><h3>Controles internos</h3></div></div><div class="fin-controls"><span>✓ RLS por empresa</span><span>✓ Trilha de auditoria existente</span><span>✓ Centros de custo</span><span>✓ Segregação por módulos</span><span>○ Workflow maker-checker</span><span>○ Fechamento contábil formal</span></div></section></div>`}
 function financeiro(){
  let ro=finReceivableOpen().reduce((a,x)=>a+finNum(x.amount||x.value),0),
      po=finPayableOpen().reduce((a,x)=>a+finNum(x.amount||x.value),0),
      bal=finBalance(),
      over=finReceivableOpen().filter(x=>finDays(x.due_date)<0).reduce((a,x)=>a+finNum(x.amount||x.value),0);
- const tabs=[['cockpit','◈ CFO Cockpit'],['receber','↗ Receber'],['pagar','↘ Pagar'],['tesouraria','▣ Tesouraria'],['dre','▤ DRE'],['budget','◎ Budget & Forecast'],['governanca','◇ Governança']];
+ const tabs=[['cockpit','◈ CFO Cockpit'],['receber','↗ Receber'],['pixparcelado','◆ PIX Parcelado'],['pagar','↘ Pagar'],['tesouraria','▣ Tesouraria'],['dre','▤ DRE'],['budget','◎ Budget & Forecast'],['governanca','◇ Governança']];
  return shell('Financeiro Enterprise','CFO Control Tower • caixa, capital de giro, performance, planejamento e governança',
- `<button class="btn fin-income" onclick="finQuickOpen('Receita')">+ Receita</button><button class="btn fin-expense" onclick="finQuickOpen('Despesa')">+ Despesa</button><button class="btn" onclick="finSetTab('governanca')">◇ Controles</button><button class="btn gold" onclick="finSetTab('cockpit')">◈ CFO Cockpit</button>`,
+ `<button class="btn fin-income" onclick="finQuickOpen('Receita')">+ Receita</button><button class="btn gold" onclick="finPixPlanOpen()">◆ PIX Parcelado</button><button class="btn fin-expense" onclick="finQuickOpen('Despesa')">+ Despesa</button><button class="btn" onclick="finSetTab('governanca')">◇ Controles</button><button class="btn gold" onclick="finSetTab('cockpit')">◈ CFO Cockpit</button>`,
  `<div class="fin-command"><div><span class="measurement-version">V6.23 • FINANCEIRO INTELIGENTE</span><h2>CFO Command Center</h2><p>Receitas e despesas com meio de pagamento, parcelamento e classificação automática.</p></div><div class="fin-command-badge"><span>FINANCIAL HEALTH</span><b class="${bal+ro-po>=0?'green':'red'}">${bal+ro-po>=0?'SAUDÁVEL':'ATENÇÃO'}</b></div></div>
  <div class="fin-quick-strip">
    <button onclick="finQuickOpen('Receita','Pix')"><b>PIX</b><span>Nova receita</span></button>
@@ -4637,7 +4691,7 @@ function financeiro(){
  </div>
  <div class="grid g4 proposal-kpis"><div class="card kpi"><label>Caixa consolidado</label><strong>${money(bal)}</strong></div><div class="card kpi"><label>Contas a receber</label><strong class="green">${money(ro)}</strong></div><div class="card kpi"><label>Contas a pagar</label><strong class="goldtxt">${money(po)}</strong></div><div class="card kpi"><label>Inadimplência</label><strong class="${over?'red':''}">${money(over)}</strong></div></div>
  <div class="fin-tabs">${tabs.map(x=>`<button class="${finTab===x[0]?'active':''}" onclick="finSetTab('${x[0]}')">${x[1]}</button>`).join('')}</div>
- ${finTab==='cockpit'?finCockpit():finTab==='receber'?finTable('receber'):finTab==='pagar'?finTable('pagar'):finTab==='tesouraria'?finTreasury():finTab==='dre'?finDRE():finTab==='budget'?finBudget():finGovernance()}`)
+ ${finTab==='cockpit'?finCockpit():finTab==='receber'?finTable('receber'):finTab==='pixparcelado'?finPixPlanPanel():finTab==='pagar'?finTable('pagar'):finTab==='tesouraria'?finTreasury():finTab==='dre'?finDRE():finTab==='budget'?finBudget():finGovernance()}`)
 }
 function maquininhas(){return simpleTable("Maquininhas & Taxas","Tabela card_machines pronta","",["Maquininha","Débito","Crédito","Ações"],[])}
 

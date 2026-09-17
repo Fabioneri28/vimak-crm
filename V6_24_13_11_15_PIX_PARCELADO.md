@@ -1,0 +1,12 @@
+# V6.24.13.11.15 — PIX Parcelado VIMAK
+- Nova modalidade Financeiro > PIX Parcelado.
+- Gera entrada + parcelas mensais em accounts_receivable.
+- Dois modos: total + entrada calcula parcela; entrada + parcela calcula total.
+- Data da entrada e primeiro vencimento configuráveis.
+- Vencimentos seguintes gerados mês a mês, com ajuste para fim do mês.
+- Entrada pode ser marcada como já recebida.
+- Cliente, centro de custo e conta bancária vinculáveis.
+- Cada parcela pode ser baixada individualmente pelo fluxo normal de Contas a Receber.
+- Parcelas futuras alimentam a projeção de caixa existente.
+- Sem tabela SQL nova / sem migration.
+- Módulo Maquininhas V6.24.13.11.14 preservado.
