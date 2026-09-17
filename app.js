@@ -310,6 +310,48 @@ function dbRanking(){
   })).sort((a,b)=>b.value-a.value).slice(0,6).map((x,i)=>`<div class="db-rank"><span>#${i+1}</span><b>${esc(x.name)}</b><small>${esc(x.status)}</small><strong>${dbMoney(x.value)}</strong></div>`).join('')||'<div class="empty">Sem propostas para ranking.</div>'
 }
 
+
+// ===== V6.24.13.11.20 • BUSCA GLOBAL + TIMELINE 360 =====
+function vimakSearchNorm(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}
+function vimakGlobalSearch(q){
+ q=vimakSearchNorm(q).trim(); if(q.length<2)return [];
+ const hit=(...vals)=>vals.some(v=>vimakSearchNorm(v).includes(q)), out=[];
+ const add=(type,title,sub,hash,id='',clientId='')=>out.push({type,title,sub,hash,id,clientId});
+ cache.clients.filter(x=>hit(x.name,x.phone,x.whatsapp,x.email,x.cpf_cnpj)).slice(0,6).forEach(x=>add('CLIENTE',x.name,x.phone||x.whatsapp||x.email||'', 'projeto360',x.id,x.id));
+ cache.leads.filter(x=>hit(x.name,x.phone,x.whatsapp,x.email,x.source,x.channel)).slice(0,6).forEach(x=>add('LEAD',x.name,x.phone||x.whatsapp||x.email||'', 'leads',x.id,x.client_id||''));
+ cache.proposals.filter(x=>hit(x.title,x.number,x.code,x.client_name,p360ClientName(p360FindClientId(x)))).slice(0,6).forEach(x=>add('PROPOSTA',x.title||x.number||'Proposta',p360ClientName(p360FindClientId(x)),'propostas',x.id,p360FindClientId(x)));
+ cache.measurements.filter(x=>hit(x.title,x.notes,p360ClientName(p360FindClientId(x)))).slice(0,4).forEach(x=>add('MEDIÇÃO',x.title||'Medição',p360ClientName(p360FindClientId(x)),'medicoes',x.id,p360FindClientId(x)));
+ cache.productionProjects.filter(x=>hit(x.title,x.name,x.status,p360ClientName(p360FindClientId(x)))).slice(0,5).forEach(x=>add('PRODUÇÃO',x.title||x.name||'Produção',p360ClientName(p360FindClientId(x)),'kanban',x.id,p360FindClientId(x)));
+ cache.installationSchedule.filter(x=>hit(x.job_address,x.status,p360ClientName(p360FindClientId(x)))).slice(0,4).forEach(x=>add('MONTAGEM',p360ClientName(p360FindClientId(x)),x.job_address||x.status||'Agendamento','agenda',x.id,p360FindClientId(x)));
+ cache.accountsReceivable.filter(x=>hit(x.description,p360ClientName(p360FindClientId(x)),x.amount,x.value)).slice(0,4).forEach(x=>add('RECEBER',x.description||'Conta a receber',`${p360ClientName(p360FindClientId(x))} • ${dbMoney(x.amount||x.value)}`,'financeiro',x.id,p360FindClientId(x)));
+ return out.slice(0,24)
+}
+function vimakOpenSearchResult(type,id,hash,clientId){
+ closeGlobalSearch();
+ if(type==='CLIENTE'||clientId){p360ClientId=clientId||id;if(type==='CLIENTE'){page='projeto360';location.hash='projeto360';render();return}}
+ page=hash;location.hash=hash;render();
+ setTimeout(()=>{if(type==='LEAD'&&typeof viewLead==='function')viewLead(id);},250)
+}
+function vimakGlobalSearchInput(v){
+ const box=document.getElementById('globalSearchResults'); if(!box)return;
+ const rows=vimakGlobalSearch(v); box.classList.toggle('open',String(v).trim().length>=2);
+ box.innerHTML=rows.length?rows.map(x=>`<button onclick="vimakOpenSearchResult('${x.type}','${x.id}','${x.hash}','${x.clientId||''}')"><span>${x.type}</span><b>${esc(x.title||'')}</b><small>${esc(x.sub||'')}</small></button>`).join(''):`<div class="global-search-empty">Nenhum resultado encontrado.</div>`;
+}
+function closeGlobalSearch(){const b=document.getElementById('globalSearchResults');if(b)b.classList.remove('open')}
+function p360Date(x){const v=x?.updated_at||x?.created_at||x?.opened_at||x?.measured_at||x?.ordered_at||x?.starts_at||x?.due_date;const d=v?new Date(v):null;return d&&!isNaN(d)?d:null}
+function p360Timeline(m){
+ let rows=[]; const push=(kind,title,sub,x,hash)=>rows.push({kind,title,sub,date:p360Date(x),hash});
+ m.proposals.forEach(x=>push('COMERCIAL',x.title||x.number||'Proposta',`Status: ${dbStatus(x)||'—'} • ${dbMoney(x.total||x.final_value||x.value)}`,x,'propostas'));
+ m.measures.forEach(x=>push('MEDIÇÃO',x.title||'Medição técnica',`Status: ${dbStatus(x)||'Registrada'}`,x,'medicoes'));
+ m.purchases.forEach(x=>push('COMPRAS',x.number||x.supplier_name||'Pedido de compra',`Status: ${dbStatus(x)||'Aberto'}`,x,'compras'));
+ m.prod.forEach(x=>push('PRODUÇÃO',x.title||x.name||'Ordem de produção',`Status: ${dbStatus(x)||'—'} • ${Number(x.progress||0)}%`,x,'kanban'));
+ m.sched.forEach(x=>push('MONTAGEM','Montagem / instalação',`${x.job_address||''} ${dbStatus(x)?'• '+dbStatus(x):''}`,x,'agenda'));
+ m.ar.forEach(x=>push('FINANCEIRO',x.description||'Conta a receber',`${dbMoney(x.amount||x.value)} • ${dbStatus(x)||'Aberto'}`,x,'financeiro'));
+ m.after.forEach(x=>push('PÓS-VENDA',x.service_type||x.title||'Pós-venda',`Status: ${dbStatus(x)||'Aberto'}`,x,'posvenda'));
+ rows.sort((a,b)=>(b.date?.getTime()||0)-(a.date?.getTime()||0));
+ return `<section class="card p360-timeline"><div class="db-panel-head"><div><span>HISTÓRICO 360°</span><h3>Timeline completa do projeto</h3></div><b>${rows.length} evento(s)</b></div><div class="timeline-list">${rows.length?rows.slice(0,40).map(x=>`<button onclick="location.hash='${x.hash}'"><i></i><span><small>${x.kind} • ${x.date?x.date.toLocaleDateString('pt-BR'):'SEM DATA'}</small><b>${esc(x.title)}</b><em>${esc(x.sub||'')}</em></span><strong>›</strong></button>`).join(''):'<div class="empty">Ainda não há eventos vinculados a este cliente.</div>'}</div></section>`
+}
+
 // ===== V6.24.13.11.16 • PROJETO 360 + CENTRAL DE PENDÊNCIAS =====
 let p360ClientId='';
 function p360OpenStatus(x){return !['Pago','Recebido','Baixado','Liquidado','Concluído','Finalizado','Entregue','Cancelado'].includes(dbStatus(x))}
@@ -394,7 +436,7 @@ function p360FinancialPanel(m){
 }
 function vimakBackup(){
  try{
-  const payload={app:'VIMAK CRM',version:'6.24.13.11.19',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
+  const payload={app:'VIMAK CRM',version:'6.24.13.11.20',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download=`VIMAK_BACKUP_${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Backup operacional gerado');
  }catch(e){toast('Não foi possível gerar o backup: '+e.message)}
@@ -416,6 +458,7 @@ function projeto360(){
  ${p360AutomationPanel(id,m)}
  ${p360HealthPanel(id,m)}
  ${p360FinancialPanel(m)}
+ ${p360Timeline(m)}
  <section class="card p360-flow"><div class="db-panel-head"><div><span>FLUXO DO PROJETO</span><h3>Da venda ao pós-venda</h3></div></div><div class="p360-stage-row">${stages.map((x,i)=>`<button onclick="location.hash='${x[2]}'"><i>${x[1]?'✓':i+1}</i><span>${x[0]}</span><b>${x[1]} registro(s)</b></button>`).join('')}</div></section>
  <div class="p360-grid"><section class="card"><div class="db-panel-head"><div><span>FINANCEIRO DO PROJETO</span><h3>Recebimentos</h3></div><b>${dbMoney(m.receivable)}</b></div><div class="p360-list">${m.ar.slice(0,10).map(x=>`<div><span>${esc(x.description||'Recebimento')}<small>${x.due_date?new Date(x.due_date+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</small></span><b>${dbMoney(x.amount||x.value)}</b><em class="${p360OpenStatus(x)?'goldtxt':'green'}">${esc(x.status||'Aberto')}</em></div>`).join('')||'<div class="empty">Sem contas vinculadas.</div>'}</div></section>
  <section class="card"><div class="db-panel-head"><div><span>EXECUÇÃO</span><h3>Últimos movimentos</h3></div></div><div class="p360-list">${[...m.prod.map(x=>['Produção',x.title||x.name||'Projeto',x.status]),...m.sched.map(x=>['Montagem',x.job_address||'Agendamento',x.status]),...m.purchases.map(x=>['Compra',x.number||x.supplier_name||'Pedido',x.status])].slice(0,10).map(x=>`<div><span>${esc(x[0])}<small>${esc(x[1]||'')}</small></span><em>${esc(x[2]||'—')}</em></div>`).join('')||'<div class="empty">Sem movimentações vinculadas.</div>'}</div></section></div>`)

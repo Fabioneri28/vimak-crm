@@ -70,7 +70,7 @@
     <header class="topbar">
       <button class="menu" onclick="toggleMenu()">☰</button>
       <div class="crumb"><span id="topCompany">VIMAK Planejados</span><i>/</i><b id="crumb">Dashboard</b></div>
-      <div class="top-actions">
+      <div class="global-search"><input id="globalSearchInput" placeholder="Buscar cliente, proposta, projeto, OS..." oninput="vimakGlobalSearchInput(this.value)" onfocus="vimakGlobalSearchInput(this.value)"><div id="globalSearchResults" class="global-search-results"></div></div><div class="top-actions">
         <button id="notificationBell" class="icon-btn" title="Notificações" onclick="openNotificationCenter()">◇<i id="notificationDot" class="notif-dot"></i><span id="notificationCount" class="notif-count" hidden>0</span></button>
         <div class="v4-badge">V6.18 • FINANCEIRO ENTERPRISE</div>
       </div>
@@ -90,8 +90,8 @@
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}</script>
-<script src="app.js?v=6.24.13.11.19"></script>
-<script src="notifications-v6249.js"></script>
+<script src="app.js?v=6.24.13.11.20"></script>
+<script src="notifications-v62420.js"></script>
 <link rel="stylesheet" href="modules/maquininhas-v6241.css?v=6.24.13.11.16">
 <script src="modules/module-registry.js"></script>
 <script src="modules/maquininhas-v6241.js?v=6.24.13.11.16"></script>
