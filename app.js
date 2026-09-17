@@ -332,20 +332,52 @@ function p360Summary(id){
 
 function p360NextAction(id,m){
  const approved=m.proposals.find(x=>['Aprovado','Fechado','Produção'].includes(dbStatus(x)));
- if(!approved)return {title:'Aprovar proposta',desc:'O projeto ainda não possui proposta aprovada.',hash:'propostas',level:'warn'};
- if(!m.measures.length)return {title:'Realizar medição',desc:'Venda aprovada. Próxima etapa recomendada: medição técnica.',hash:'medicoes',level:'gold'};
+ if(!approved)return {title:'Aprovar proposta',desc:'O projeto ainda não possui proposta aprovada.',hash:'propostas',action:'proposal',level:'warn'};
+ if(!m.measures.length)return {title:'Realizar medição',desc:'Venda aprovada. Abra uma nova medição já vinculada ao cliente e à proposta.',hash:'medicoes',action:'measurement',level:'gold'};
  const measureDone=m.measures.some(x=>{const st=dbStatus(x)||x.measurements?.status||'';return ['Concluída','Concluido','Concluído','Finalizada'].includes(st)});
- if(!measureDone)return {title:'Concluir medição',desc:'Existe medição aberta; finalize antes de liberar a produção.',hash:'medicoes',level:'warn'};
- if(!m.purchases.length)return {title:'Planejar compras',desc:'Medição concluída. Confira materiais e gere os pedidos necessários.',hash:'compras',level:'gold'};
- if(!m.prod.length)return {title:'Liberar produção',desc:'Projeto medido e compras registradas. Próxima etapa: produção.',hash:'kanban',level:'gold'};
+ if(!measureDone)return {title:'Concluir medição',desc:'Existe medição aberta; abra diretamente o registro e finalize antes de liberar a produção.',hash:'medicoes',action:'measurement-open',level:'warn'};
+ if(!m.purchases.length)return {title:'Planejar compras',desc:'Medição concluída. Abra um novo pedido já vinculado à proposta deste cliente.',hash:'compras',action:'purchase',level:'gold'};
+ if(!m.prod.length)return {title:'Liberar produção',desc:'Projeto medido e compras registradas. Crie a ordem de produção com cliente e proposta preenchidos.',hash:'kanban',action:'production',level:'gold'};
  const prodDone=m.prod.some(x=>['Concluído','Finalizado','Pronto','Entregue'].includes(dbStatus(x)));
- if(!prodDone)return {title:'Acompanhar produção',desc:'Projeto em fabricação. Monitore prazo e liberação para montagem.',hash:'kanban',level:'blue'};
- if(!m.sched.length)return {title:'Agendar montagem',desc:'Produção concluída. Agende equipe e data com o cliente.',hash:'agenda',level:'gold'};
+ if(!prodDone)return {title:'Acompanhar produção',desc:'Projeto em fabricação. Abra diretamente a ordem para acompanhar prazo e avanço.',hash:'kanban',action:'production-open',level:'blue'};
+ if(!m.sched.length)return {title:'Agendar montagem',desc:'Produção concluída. Abra o agendamento com cliente, proposta e endereço pré-preenchidos.',hash:'agenda',action:'agenda',level:'gold'};
  const mountDone=m.sched.some(x=>['Concluído','Finalizado'].includes(dbStatus(x)));
- if(!mountDone)return {title:'Concluir montagem',desc:'Montagem programada/em execução. Finalize o checklist de entrega.',hash:'agenda',level:'blue'};
- if(!m.after.length)return {title:'Abrir pós-venda',desc:'Montagem concluída. Inicie acompanhamento de satisfação e garantia.',hash:'posvenda',level:'green'};
- return {title:'Projeto acompanhado',desc:'Fluxo comercial, execução e pós-venda possuem registros vinculados.',hash:'posvenda',level:'green'};
+ if(!mountDone)return {title:'Concluir montagem',desc:'Montagem programada/em execução. Abra diretamente o agendamento para concluir a execução.',hash:'agenda',action:'agenda-open',level:'blue'};
+ if(!m.after.length)return {title:'Abrir pós-venda',desc:'Montagem concluída. Abra o pós-venda já vinculado ao cliente e à proposta.',hash:'posvenda',action:'aftersale',level:'green'};
+ return {title:'Projeto acompanhado',desc:'Fluxo comercial, execução e pós-venda possuem registros vinculados.',hash:'posvenda',action:'aftersale-open',level:'green'};
 }
+
+// ===== V6.24.13.11.19 • AÇÕES 360 DE UM CLIQUE =====
+function p360MainProposal(m){return m.proposals.find(x=>['Aprovado','Fechado','Produção','Finalizado'].includes(dbStatus(x)))||m.proposals[0]||null}
+function p360ClientAddress(c){return [c?.address,c?.number,c?.district,c?.city,c?.state].filter(Boolean).join(', ')}
+function p360Execute(id,action,hash){
+ const c=cache.clients.find(x=>x.id===id),m=p360Summary(id),p=p360MainProposal(m);
+ if(!c)return toast('Cliente não encontrado');
+ if(action==='proposal'){location.hash='propostas';return}
+ if(action==='measurement'){
+   measurementEditorId=null;measurementDraft=measurementBuildDraft({client_id:id,proposal_id:p?.id||null});measurementTab='dados';measurementActiveEnvironment=0;page='medicoes';location.hash='medicoes';render();toast('Medição preparada para '+c.name);return;
+ }
+ if(action==='measurement-open'){
+   const x=m.measures.find(z=>!['Concluída','Concluido','Concluído','Finalizada'].includes(dbStatus(z)||z.measurements?.status||''))||m.measures[0];if(x){page='medicoes';location.hash='medicoes';editMeasurement(x.id);return}
+ }
+ if(action==='purchase'){
+   purchaseDraftItems=[];openModal('Novo Pedido de Compra • '+c.name,purchaseForm({proposal_id:p?.id||null,status:'Aberto'}),`savePurchase()`);modal.classList.add('proposal-modal');setTimeout(refreshPurchaseDraft,0);return;
+ }
+ if(action==='production'){
+   const title=p?.title||('Projeto • '+c.name);openModal('Nova Ordem de Produção • '+c.name,prodForm({title,client_id:id,proposal_id:p?.id||null,stage:'Orçado',priority:'Normal',progress:5}),`saveProduction()`);modal.classList.add('proposal-modal');return;
+ }
+ if(action==='production-open'){const x=m.prod.find(z=>!['Concluído','Finalizado','Pronto','Entregue'].includes(dbStatus(z)))||m.prod[0];if(x){viewProduction(x.id);return}}
+ if(action==='agenda'){
+   window._agEditing='';const address=p360ClientAddress(c);openModal('Agendar Montagem • '+c.name,agForm({client_id:id,proposal_id:p?.id||null,job_address:address,status:'Agendado',metadata:{measure_ok:true,production_ok:true,contact:c.name,phone:c.whatsapp||c.phone||''}}),`saveAgenda()`);modal.classList.add('proposal-modal');setTimeout(agCheckAvailability,0);return;
+ }
+ if(action==='agenda-open'){const x=m.sched.find(z=>!['Concluído','Finalizado'].includes(dbStatus(z)))||m.sched[0];if(x){editAgenda(x.id);return}}
+ if(action==='aftersale'){
+   openModal('Novo Pós-venda • '+c.name,afterSaleForm({client_id:id,proposal_id:p?.id||null,service_type:'Orientação de uso',priority:'Normal',status:'Aberto',description:'Acompanhamento pós-entrega / satisfação do cliente.'}),`saveAfterSale()`);return;
+ }
+ if(action==='aftersale-open'){const x=m.after.find(z=>!['Concluído','Cancelado'].includes(dbStatus(z)))||m.after[0];if(x){viewAfterSale(x.id);return}}
+ location.hash=hash||'projeto360';
+}
+
 function p360AutomationPanel(id,m){
  const n=p360NextAction(id,m);
  const checks=[
@@ -353,7 +385,7 @@ function p360AutomationPanel(id,m){
   ['Medição registrada',m.measures.length>0],['Compras registradas',m.purchases.length>0],['Produção criada',m.prod.length>0],
   ['Montagem agendada',m.sched.length>0],['Pós-venda iniciado',m.after.length>0]
  ];
- return `<section class="card p360-auto"><div class="db-panel-head"><div><span>AUTOMAÇÃO ASSISTIDA</span><h3>Próxima ação inteligente</h3></div><b>${checks.filter(x=>x[1]).length}/${checks.length}</b></div><div class="p360-next ${n.level}"><div><small>RECOMENDAÇÃO DO FLUXO</small><h3>${n.title}</h3><p>${n.desc}</p></div><button class="btn gold" onclick="location.hash='${n.hash}'">EXECUTAR ETAPA ›</button></div><div class="p360-checks">${checks.map(x=>`<span class="${x[1]?'done':''}"><i>${x[1]?'✓':'○'}</i>${x[0]}</span>`).join('')}</div></section>`;
+ return `<section class="card p360-auto"><div class="db-panel-head"><div><span>AUTOMAÇÃO ASSISTIDA</span><h3>Próxima ação inteligente</h3></div><b>${checks.filter(x=>x[1]).length}/${checks.length}</b></div><div class="p360-next ${n.level}"><div><small>RECOMENDAÇÃO DO FLUXO</small><h3>${n.title}</h3><p>${n.desc}</p></div><button class="btn gold" onclick="p360Execute('${id}','${n.action||''}','${n.hash}')">EXECUTAR ETAPA ›</button></div><div class="p360-checks">${checks.map(x=>`<span class="${x[1]?'done':''}"><i>${x[1]?'✓':'○'}</i>${x[0]}</span>`).join('')}</div></section>`;
 }
 function p360FinancialPanel(m){
  const costTotal=m.paid+m.payable, projected=m.sales-costTotal, cash=m.received-m.paid;
@@ -362,7 +394,7 @@ function p360FinancialPanel(m){
 }
 function vimakBackup(){
  try{
-  const payload={app:'VIMAK CRM',version:'6.24.13.11.18',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
+  const payload={app:'VIMAK CRM',version:'6.24.13.11.19',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download=`VIMAK_BACKUP_${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Backup operacional gerado');
  }catch(e){toast('Não foi possível gerar o backup: '+e.message)}
