@@ -1,6 +1,6 @@
 
 const NAV=[
-["VISÃO GERAL",[["dashboard","⌂","Dashboard"],["leads","◎","Leads & CRM"]]],
+["VISÃO GERAL",[["dashboard","⌂","Hoje na VIMAK"],["projeto360","◉","Projeto 360°"],["leads","◎","Leads & CRM"]]],
 ["EMPRESA",[["empresa","◈","Configurações"],["usuarios","♙","Usuários"],["auditoria","◌","Auditoria"],["planos","◆","Assinatura / Planos"]]],
 ["CADASTROS",[["clientes","♙","Clientes"],["fornecedores","▣","Fornecedores"],["parceiros","◇","Parceiros"],["posvenda","✓","Pós-venda / Garantia"]]],
 ["PROPOSTAS",[["insumos","▥","Insumos"],["propostas","▤","Propostas"],["orcamentopdf","📐","Orçamento por PDF"],["modelos","▥","Modelos de Proposta"],["medicoes","⌗","Medições"],["compras","▰","Compras"]]],
@@ -135,7 +135,7 @@ function can(route){
   if(profile.role==="Administrador")return true;
   const perms=Array.isArray(profile.permissions)?profile.permissions:[];
   if(perms.includes("*"))return true;
-  const map={dashboard:"dashboard",leads:"leads",clientes:"clientes",propostas:"propostas",orcamentopdf:"propostas",kanban:"producao",corte:"producao",sobras:"producao",financeiro:"financeiro",rentabilidade:"financeiro",custosequipe:"financeiro",maquininhas:"financeiro",empresa:"empresa",usuarios:"usuarios",auditoria:"empresa",planos:"empresa",fornecedores:"cadastros",parceiros:"cadastros",posvenda:"cadastros",insumos:"cadastros",modelos:"propostas",medicoes:"propostas",compras:"propostas",templates:"documentos",cortecloud:"integracoes",equipes:"montagem",agenda:"montagem"};
+  const map={dashboard:"dashboard",projeto360:"dashboard",leads:"leads",clientes:"clientes",propostas:"propostas",orcamentopdf:"propostas",kanban:"producao",corte:"producao",sobras:"producao",financeiro:"financeiro",rentabilidade:"financeiro",custosequipe:"financeiro",maquininhas:"financeiro",empresa:"empresa",usuarios:"usuarios",auditoria:"empresa",planos:"empresa",fornecedores:"cadastros",parceiros:"cadastros",posvenda:"cadastros",insumos:"cadastros",modelos:"propostas",medicoes:"propostas",compras:"propostas",templates:"documentos",cortecloud:"integracoes",equipes:"montagem",agenda:"montagem"};
   return perms.includes(map[route]||route);
 }
 function syncChrome(){
@@ -309,6 +309,98 @@ function dbRanking(){
     status:dbStatus(p)||'—'
   })).sort((a,b)=>b.value-a.value).slice(0,6).map((x,i)=>`<div class="db-rank"><span>#${i+1}</span><b>${esc(x.name)}</b><small>${esc(x.status)}</small><strong>${dbMoney(x.value)}</strong></div>`).join('')||'<div class="empty">Sem propostas para ranking.</div>'
 }
+
+// ===== V6.24.13.11.16 • PROJETO 360 + CENTRAL DE PENDÊNCIAS =====
+let p360ClientId='';
+function p360OpenStatus(x){return !['Pago','Recebido','Baixado','Liquidado','Concluído','Finalizado','Entregue','Cancelado'].includes(dbStatus(x))}
+function p360ClientName(id){return cache.clients.find(x=>x.id===id)?.name||'Cliente'}
+function p360ByClient(arr,id){return (arr||[]).filter(x=>x.client_id===id)}
+function p360MoneySum(arr){return (arr||[]).reduce((a,x)=>a+dbNum(x.amount||x.value||x.total||x.final_value||x.sale_value),0)}
+function p360FindClientId(x){
+ if(x?.client_id)return x.client_id;
+ const name=String(x?.client_name||x?.customer_name||'').trim().toLowerCase();
+ return name?cache.clients.find(c=>String(c.name||'').trim().toLowerCase()===name)?.id||'':''
+}
+function p360Linked(arr,id){return (arr||[]).filter(x=>p360FindClientId(x)===id)}
+function p360Summary(id){
+ const proposals=p360Linked(cache.proposals,id),measures=p360Linked(cache.measurements,id),purchases=p360Linked(cache.purchaseOrders,id),prod=p360Linked(cache.productionProjects,id),sched=p360Linked(cache.installationSchedule,id),after=p360Linked(cache.afterSales,id),ar=p360Linked(cache.accountsReceivable,id),ap=p360Linked(cache.accountsPayable,id);
+ const sales=proposals.filter(x=>['Aprovado','Fechado','Produção','Finalizado'].includes(dbStatus(x))).reduce((a,x)=>a+dbNum(x.total||x.final_value||x.value),0);
+ const received=ar.filter(x=>!p360OpenStatus(x)).reduce((a,x)=>a+dbNum(x.amount||x.value),0),receivable=ar.filter(p360OpenStatus).reduce((a,x)=>a+dbNum(x.amount||x.value),0);
+ const paid=ap.filter(x=>!p360OpenStatus(x)).reduce((a,x)=>a+dbNum(x.amount||x.value),0),payable=ap.filter(p360OpenStatus).reduce((a,x)=>a+dbNum(x.amount||x.value),0);
+ return {proposals,measures,purchases,prod,sched,after,ar,ap,sales,received,receivable,paid,payable,margin:sales-paid-payable}
+}
+
+function p360NextAction(id,m){
+ const approved=m.proposals.find(x=>['Aprovado','Fechado','Produção'].includes(dbStatus(x)));
+ if(!approved)return {title:'Aprovar proposta',desc:'O projeto ainda não possui proposta aprovada.',hash:'propostas',level:'warn'};
+ if(!m.measures.length)return {title:'Realizar medição',desc:'Venda aprovada. Próxima etapa recomendada: medição técnica.',hash:'medicoes',level:'gold'};
+ const measureDone=m.measures.some(x=>{const st=dbStatus(x)||x.measurements?.status||'';return ['Concluída','Concluido','Concluído','Finalizada'].includes(st)});
+ if(!measureDone)return {title:'Concluir medição',desc:'Existe medição aberta; finalize antes de liberar a produção.',hash:'medicoes',level:'warn'};
+ if(!m.purchases.length)return {title:'Planejar compras',desc:'Medição concluída. Confira materiais e gere os pedidos necessários.',hash:'compras',level:'gold'};
+ if(!m.prod.length)return {title:'Liberar produção',desc:'Projeto medido e compras registradas. Próxima etapa: produção.',hash:'kanban',level:'gold'};
+ const prodDone=m.prod.some(x=>['Concluído','Finalizado','Pronto','Entregue'].includes(dbStatus(x)));
+ if(!prodDone)return {title:'Acompanhar produção',desc:'Projeto em fabricação. Monitore prazo e liberação para montagem.',hash:'kanban',level:'blue'};
+ if(!m.sched.length)return {title:'Agendar montagem',desc:'Produção concluída. Agende equipe e data com o cliente.',hash:'agenda',level:'gold'};
+ const mountDone=m.sched.some(x=>['Concluído','Finalizado'].includes(dbStatus(x)));
+ if(!mountDone)return {title:'Concluir montagem',desc:'Montagem programada/em execução. Finalize o checklist de entrega.',hash:'agenda',level:'blue'};
+ if(!m.after.length)return {title:'Abrir pós-venda',desc:'Montagem concluída. Inicie acompanhamento de satisfação e garantia.',hash:'posvenda',level:'green'};
+ return {title:'Projeto acompanhado',desc:'Fluxo comercial, execução e pós-venda possuem registros vinculados.',hash:'posvenda',level:'green'};
+}
+function p360AutomationPanel(id,m){
+ const n=p360NextAction(id,m);
+ const checks=[
+  ['Proposta aprovada',m.proposals.some(x=>['Aprovado','Fechado','Produção','Finalizado'].includes(dbStatus(x)))],
+  ['Medição registrada',m.measures.length>0],['Compras registradas',m.purchases.length>0],['Produção criada',m.prod.length>0],
+  ['Montagem agendada',m.sched.length>0],['Pós-venda iniciado',m.after.length>0]
+ ];
+ return `<section class="card p360-auto"><div class="db-panel-head"><div><span>AUTOMAÇÃO ASSISTIDA</span><h3>Próxima ação inteligente</h3></div><b>${checks.filter(x=>x[1]).length}/${checks.length}</b></div><div class="p360-next ${n.level}"><div><small>RECOMENDAÇÃO DO FLUXO</small><h3>${n.title}</h3><p>${n.desc}</p></div><button class="btn gold" onclick="location.hash='${n.hash}'">EXECUTAR ETAPA ›</button></div><div class="p360-checks">${checks.map(x=>`<span class="${x[1]?'done':''}"><i>${x[1]?'✓':'○'}</i>${x[0]}</span>`).join('')}</div></section>`;
+}
+function p360FinancialPanel(m){
+ const costTotal=m.paid+m.payable, projected=m.sales-costTotal, cash=m.received-m.paid;
+ const marginPct=m.sales?projected/m.sales*100:0, receivePct=m.sales?m.received/m.sales*100:0;
+ return `<section class="card p360-fin-pro"><div class="db-panel-head"><div><span>FINANCEIRO POR PROJETO</span><h3>Resultado e exposição financeira</h3></div><button class="btn sm" onclick="location.hash='financeiro'">Abrir financeiro</button></div><div class="p360-fin-grid"><div><small>Contrato / venda</small><b>${dbMoney(m.sales)}</b></div><div><small>Caixa recebido</small><b class="green">${dbMoney(m.received)}</b><span>${receivePct.toFixed(1)}% da venda</span></div><div><small>Saldo a receber</small><b>${dbMoney(m.receivable)}</b></div><div><small>Custos totais</small><b>${dbMoney(costTotal)}</b><span>${dbMoney(m.payable)} ainda a pagar</span></div><div><small>Margem projetada</small><b class="goldtxt">${dbMoney(projected)}</b><span>${marginPct.toFixed(1)}% da venda</span></div><div><small>Caixa realizado</small><b class="${cash>=0?'green':'red'}">${dbMoney(cash)}</b><span>recebido − pago</span></div></div></section>`;
+}
+function vimakBackup(){
+ try{
+  const payload={app:'VIMAK CRM',version:'6.24.13.11.17',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=`VIMAK_BACKUP_${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Backup operacional gerado');
+ }catch(e){toast('Não foi possível gerar o backup: '+e.message)}
+}
+
+function p360Select(id){p360ClientId=id;render()}
+function p360Card(label,value,sub,cls=''){return `<div class="p360-kpi"><small>${label}</small><b class="${cls}">${value}</b><span>${sub}</span></div>`}
+function projeto360(){
+ const clients=[...cache.clients].sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+ if(!p360ClientId&&clients[0])p360ClientId=clients[0].id;
+ const id=p360ClientId,c=clients.find(x=>x.id===id),m=id?p360Summary(id):null;
+ const options=clients.map(x=>`<option value="${x.id}" ${x.id===id?'selected':''}>${esc(x.name)}</option>`).join('');
+ if(!c)return shell('Projeto 360°','Ficha mestre do cliente e de toda a operação','','<div class="card empty">Cadastre um cliente para iniciar o Projeto 360°.</div>');
+ const stages=[['Proposta',m.proposals.length,'propostas'],['Medição',m.measures.length,'medicoes'],['Compras',m.purchases.length,'compras'],['Produção',m.prod.length,'kanban'],['Montagem',m.sched.length,'agenda'],['Pós-venda',m.after.length,'posvenda']];
+ const openAR=m.ar.filter(p360OpenStatus),late=openAR.filter(x=>x.due_date&&new Date(x.due_date)<new Date());
+ return shell('Projeto 360°','Ordem Mestre • comercial, execução, financeiro e pós-venda em uma única ficha',`<select class="p360-client-select" onchange="p360Select(this.value)">${options}</select>`,
+ `<div class="p360-hero"><div><span>ORDEM MESTRE VIMAK</span><h2>${esc(c.name)}</h2><p>${esc(c.phone||c.whatsapp||'')} ${c.email?'• '+esc(c.email):''}</p></div><div class="p360-health"><small>STATUS FINANCEIRO</small><b class="${late.length?'red':'green'}">${late.length?late.length+' VENCIDA(S)':'EM DIA'}</b></div></div>
+ <div class="p360-kpis">${p360Card('VENDA APROVADA',dbMoney(m.sales),m.proposals.length+' proposta(s)','goldtxt')}${p360Card('RECEBIDO',dbMoney(m.received),'realizado','green')}${p360Card('A RECEBER',dbMoney(m.receivable),openAR.length+' parcela(s)')}${p360Card('CUSTO / A PAGAR',dbMoney(m.paid+m.payable),'realizado + previsto')}${p360Card('MARGEM PROJETADA',dbMoney(m.margin),'venda − custos','goldtxt')}</div>
+ ${p360AutomationPanel(id,m)}
+ ${p360FinancialPanel(m)}
+ <section class="card p360-flow"><div class="db-panel-head"><div><span>FLUXO DO PROJETO</span><h3>Da venda ao pós-venda</h3></div></div><div class="p360-stage-row">${stages.map((x,i)=>`<button onclick="location.hash='${x[2]}'"><i>${x[1]?'✓':i+1}</i><span>${x[0]}</span><b>${x[1]} registro(s)</b></button>`).join('')}</div></section>
+ <div class="p360-grid"><section class="card"><div class="db-panel-head"><div><span>FINANCEIRO DO PROJETO</span><h3>Recebimentos</h3></div><b>${dbMoney(m.receivable)}</b></div><div class="p360-list">${m.ar.slice(0,10).map(x=>`<div><span>${esc(x.description||'Recebimento')}<small>${x.due_date?new Date(x.due_date+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</small></span><b>${dbMoney(x.amount||x.value)}</b><em class="${p360OpenStatus(x)?'goldtxt':'green'}">${esc(x.status||'Aberto')}</em></div>`).join('')||'<div class="empty">Sem contas vinculadas.</div>'}</div></section>
+ <section class="card"><div class="db-panel-head"><div><span>EXECUÇÃO</span><h3>Últimos movimentos</h3></div></div><div class="p360-list">${[...m.prod.map(x=>['Produção',x.title||x.name||'Projeto',x.status]),...m.sched.map(x=>['Montagem',x.job_address||'Agendamento',x.status]),...m.purchases.map(x=>['Compra',x.number||x.supplier_name||'Pedido',x.status])].slice(0,10).map(x=>`<div><span>${esc(x[0])}<small>${esc(x[1]||'')}</small></span><em>${esc(x[2]||'—')}</em></div>`).join('')||'<div class="empty">Sem movimentações vinculadas.</div>'}</div></section></div>`)
+}
+function dbToday(){
+ const now=new Date(),today=now.toISOString().slice(0,10),in30=new Date(now);in30.setDate(in30.getDate()+30);
+ const open=x=>!['Pago','Recebido','Baixado','Liquidado','Concluído','Finalizado','Cancelado'].includes(dbStatus(x));
+ const recvToday=cache.accountsReceivable.filter(x=>open(x)&&String(x.due_date||'').slice(0,10)===today),lateAR=cache.accountsReceivable.filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now);
+ const next30=cache.accountsReceivable.filter(x=>open(x)&&x.due_date&&new Date(x.due_date)>=now&&new Date(x.due_date)<=in30).reduce((a,x)=>a+dbNum(x.amount||x.value),0);
+ const mounts=cache.installationSchedule.filter(x=>String(x.starts_at||'').slice(0,10)===today&&!['Cancelado'].includes(dbStatus(x)));
+ const prodLate=(cache.productionProjects||[]).filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now);
+ const purchaseLate=(cache.purchaseOrders||[]).filter(x=>open(x)&&x.expected_at&&new Date(x.expected_at)<now);
+ const mountLate=(cache.installationSchedule||[]).filter(x=>open(x)&&x.ends_at&&new Date(x.ends_at)<now);
+ const hot=cache.leads.filter(x=>!['Pós-venda','Perdido','Cancelado'].includes(dbLeadStage(x))&&Number(x.score||0)>=75);
+ const items=[['CLIENTES PRIORITÁRIOS',hot.length,'Leads com score ≥ 75','leads'],['RECEBER HOJE',recvToday.length,dbMoney(p360MoneySum(recvToday)),'financeiro'],['VENCIDOS',lateAR.length,dbMoney(p360MoneySum(lateAR)),'financeiro'],['PRODUÇÃO ATRASADA',prodLate.length,'exige atenção','kanban'],['COMPRAS ATRASADAS',purchaseLate.length,'fornecedor / material','compras'],['MONTAGENS HOJE',mounts.length,'agenda operacional','agenda'],['MONTAGENS ATRASADAS',mountLate.length,'execução pendente','agenda'],['PRÓXIMOS 30 DIAS',dbMoney(next30),'previsto a receber','financeiro']];
+ return `<section class="card db-today"><div class="db-panel-head"><div><span>CENTRAL DE PENDÊNCIAS</span><h3>Hoje na VIMAK</h3></div><b>${new Date().toLocaleDateString('pt-BR')}</b></div><div class="db-today-grid">${items.map(x=>`<button onclick="location.hash='${x[3]}'"><small>${x[0]}</small><b>${x[1]}</b><span>${x[2]}</span><strong>ABRIR ›</strong></button>`).join('')}</div></section>`
+}
+
 function dashboard(){
   const activeLeads=cache.leads.filter(x=>!['Pós-venda','Perdido','Cancelado'].includes(dbLeadStage(x)));
   const pipeline=activeLeads.reduce((a,x)=>a+dbLeadValue(x),0);
@@ -321,8 +413,10 @@ function dashboard(){
   const conv=proposals.length?approved/proposals.length*100:0;
 
   return shell('Dashboard Executivo 360°','CEO Command Center • comercial, operação, produção, montagem e financeiro',
-  `<button class="btn" onclick="location.hash='propostas'">▤ Propostas</button><button class="btn gold" onclick="location.hash='financeiro'">◈ Financeiro</button>`,
+  `<button class="btn" onclick="vimakBackup()">⇩ Backup</button><button class="btn" onclick="location.hash='propostas'">▤ Propostas</button><button class="btn gold" onclick="location.hash='financeiro'">◈ Financeiro</button>`,
   `<div class="db-command"><div><span class="measurement-version">V6.21 • CEO COMMAND CENTER</span><h2>VIMAK Executive Intelligence</h2><p>Uma visão única do negócio: vendas, execução, caixa, produtividade e riscos.</p></div><div class="db-health"><span>BUSINESS HEALTH</span><b class="${receber+forecast-pagar>=0?'green':'red'}">${receber+forecast-pagar>=0?'SAUDÁVEL':'ATENÇÃO'}</b></div></div>
+
+  ${dbToday()}
 
   <div class="grid g4 proposal-kpis">
     <div class="card kpi"><label>Pipeline Comercial</label><strong>${dbMoney(pipeline)}</strong><small>${activeLeads.length} oportunidades</small></div>
@@ -4799,6 +4893,6 @@ function teamRescisao(){const rows=finIntel.team.map(teamCalc);if(!rows.length)r
 function teamSimulate(){const id=document.getElementById('trMember')?.value,x=finIntel.team.find(v=>v.id===id);if(!x)return;const calc=teamCalc(x),date=new Date((document.getElementById('trDate')?.value||new Date().toISOString().slice(0,10))+'T12:00'),adm=new Date((x.admission_date||new Date().toISOString().slice(0,10))+'T12:00'),days=Math.max(0,Math.floor((date-adm)/86400000)),years=Math.floor(days/365),months=Math.max(1,Math.min(12,Math.floor((days%365)/30)||1));const inp=document.getElementById('teamResInputs'),out=document.getElementById('teamResResult');if(x.contract_type==='CLT'){inp.innerHTML=`<div class="form-grid"><div class="field"><label>Férias vencidas (períodos)</label><input id="trVac" type="number" min="0" value="0" oninput="teamSimulateClt()"></div><div class="field"><label>Saldo FGTS real</label><input id="trFgts" type="number" step=".01" value="${(n(x.base_salary)*n(teamCfg().fgts_rate)*Math.max(1,Math.floor(days/30))).toFixed(2)}" oninput="teamSimulateClt()"></div><div class="field full"><label>Aviso prévio</label><select id="trNotice" onchange="teamSimulateClt()"><option>Indenizado</option><option>Trabalhado</option></select></div></div>`;window._tr={x,days,years,months};teamSimulateClt()}else{inp.innerHTML=`<div class="form-grid"><div class="field"><label>Multa contratual</label><input id="trFine" type="number" step=".01" value="0" oninput="teamSimulatePJ()"></div><div class="field"><label>Aviso comercial</label><input id="trNoticePJ" type="number" step=".01" value="0" oninput="teamSimulatePJ()"></div></div>`;window._tr={x,days,years,months};teamSimulatePJ()}}
 function teamSimulateClt(){const q=window._tr;if(!q)return;const base=n(q.x.base_salary),noticeDays=30+q.years*3,notice=document.getElementById('trNotice')?.value==='Indenizado'?base/30*noticeDays:0,vacProp=base/12*q.months,vacExpired=base*n(document.getElementById('trVac')?.value),third=(vacProp+vacExpired)/3,th=base/12*q.months,fgts=n(document.getElementById('trFgts')?.value),fine=fgts*.40,total=notice+vacProp+vacExpired+third+th+fine;teamResResult.innerHTML=`<div class="fin-panel-head"><div><span>SIMULAÇÃO GERENCIAL</span><h3>${esc(q.x.name)}</h3></div><b class="red">${money(total)}</b></div><div class="rent-metrics"><div><span>Aviso (${noticeDays} dias)</span><b>${money(notice)}</b></div><div><span>Férias proporcionais</span><b>${money(vacProp)}</b></div><div><span>Férias vencidas</span><b>${money(vacExpired)}</b></div><div><span>1/3 de férias</span><b>${money(third)}</b></div><div><span>13º proporcional</span><b>${money(th)}</b></div><div><span>Multa FGTS 40%</span><b>${money(fine)}</b></div></div><p class="fin-copy">Estimativa gerencial baseada nos parâmetros cadastrados. Validar com contador/folha antes de decisão trabalhista.</p>`}
 function teamSimulatePJ(){const q=window._tr;if(!q)return;const a=n(document.getElementById('trFine')?.value),b=n(document.getElementById('trNoticePJ')?.value);teamResResult.innerHTML=`<div class="fin-panel-head"><div><span>SIMULAÇÃO CONTRATUAL</span><h3>${esc(q.x.name)}</h3></div><b class="red">${money(a+b)}</b></div><div class="rent-metrics"><div><span>Multa contratual</span><b>${money(a)}</b></div><div><span>Aviso comercial</span><b>${money(b)}</b></div></div><p class="fin-copy">Estimativa do impacto de caixa conforme condições comerciais informadas.</p>`}
-const VIEWS={dashboard,leads,empresa,usuarios,auditoria,planos,clientes,fornecedores,parceiros,posvenda,insumos,propostas,orcamentopdf,modelos,medicoes,compras,templates,kanban,corte,sobras,cortecloud,equipes,agenda,financeiro,rentabilidade,custosequipe,maquininhas};
+const VIEWS={dashboard,projeto360,leads,empresa,usuarios,auditoria,planos,clientes,fornecedores,parceiros,posvenda,insumos,propostas,orcamentopdf,modelos,medicoes,compras,templates,kanban,corte,sobras,cortecloud,equipes,agenda,financeiro,rentabilidade,custosequipe,maquininhas};
 window.addEventListener("hashchange",()=>{page=location.hash.slice(1)||"dashboard";if(session)render()});
 init();
