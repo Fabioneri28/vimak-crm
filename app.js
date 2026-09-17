@@ -436,10 +436,53 @@ function p360FinancialPanel(m){
 }
 function vimakBackup(){
  try{
-  const payload={app:'VIMAK CRM',version:'6.24.13.11.20',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
+  const payload={app:'VIMAK CRM',version:'6.24.13.11.21',generated_at:new Date().toISOString(),company:{id:company?.id||profile?.company_id,name:company?.name||''},data:cache};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download=`VIMAK_BACKUP_${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Backup operacional gerado');
  }catch(e){toast('Não foi possível gerar o backup: '+e.message)}
+}
+
+
+
+// ===== V6.24.13.11.21 • FECHAMENTO INTELIGENTE =====
+function p360CloseData(id,m){
+ const approved=m.proposals.some(x=>['Aprovado','Fechado','Produção','Finalizado'].includes(dbStatus(x)));
+ const measureDone=m.measures.some(x=>['Concluída','Concluido','Concluído','Finalizada'].includes(dbStatus(x)||x.measurements?.status||''));
+ const prodDone=m.prod.length>0&&m.prod.every(x=>['Concluído','Finalizado','Pronto','Entregue'].includes(dbStatus(x)));
+ const mountDone=m.sched.length>0&&m.sched.every(x=>['Concluído','Finalizado'].includes(dbStatus(x)));
+ const arOpen=m.ar.filter(p360OpenStatus),apOpen=m.ap.filter(p360OpenStatus);
+ const checks=[['Venda aprovada',approved],['Medição concluída',measureDone],['Produção concluída',prodDone],['Montagem concluída',mountDone],['Financeiro a receber quitado',arOpen.length===0],['Contas do projeto encerradas',apOpen.length===0]];
+ return {checks,ready:checks.every(x=>x[1]),arOpen,apOpen};
+}
+function p360RealProfit(m){
+ const sale=m.sales||p360MoneySum(m.ar), fees=(m.ar||[]).reduce((a,x)=>a+dbNum(x.fee_amount||x.fees||x.metadata?.fee_amount),0);
+ const paid=m.paid, committed=m.payable, finalProfit=sale-paid-fees, projected=sale-paid-committed-fees;
+ const pct=sale?finalProfit/sale*100:0, projectedPct=sale?projected/sale*100:0;
+ return {sale,fees,paid,committed,finalProfit,projected,pct,projectedPct};
+}
+function p360ClosingPanel(id,m){
+ const c=p360CloseData(id,m),r=p360RealProfit(m),done=c.checks.filter(x=>x[1]).length;
+ return `<section class="card p360-closing"><div class="db-panel-head"><div><span>FECHAMENTO INTELIGENTE</span><h3>Conferência final do projeto</h3></div><b class="${c.ready?'green':'goldtxt'}">${done}/${c.checks.length}</b></div><div class="p360-close-grid"><div class="p360-close-checks">${c.checks.map(x=>`<span class="${x[1]?'done':'pending'}"><i>${x[1]?'✓':'!'}</i>${x[0]}</span>`).join('')}</div><div class="p360-final-profit"><small>RENTABILIDADE FINAL</small><b class="${r.finalProfit>=0?'green':'red'}">${dbMoney(r.finalProfit)}</b><span>${r.pct.toFixed(1)}% sobre ${dbMoney(r.sale)}</span><em>Custos pagos ${dbMoney(r.paid)}${r.fees?' • taxas '+dbMoney(r.fees):''}</em><em>${r.committed?dbMoney(r.committed)+' ainda comprometido(s)':''}</em></div></div><div class="p360-close-actions"><button class="btn" onclick="location.hash='financeiro'">Revisar financeiro</button><button class="btn gold" ${c.ready?'':'disabled'} onclick="p360Finalize('${id}')">${c.ready?'CONCLUIR PROJETO ✓':'PENDÊNCIAS EM ABERTO'}</button></div></section>`;
+}
+async function p360Finalize(id){
+ const m=p360Summary(id),c=p360CloseData(id,m);if(!c.ready)return toast('Ainda existem pendências para encerrar o projeto');
+ if(!confirm('Confirmar o fechamento deste projeto? As propostas aprovadas serão marcadas como Finalizado.'))return;
+ const ids=m.proposals.filter(x=>['Aprovado','Fechado','Produção'].includes(dbStatus(x))).map(x=>x.id);if(!ids.length)return toast('Nenhuma proposta ativa para finalizar');
+ const {error}=await sb.from('proposals').update({status:'Finalizado'}).in('id',ids);if(error)return toast('Não foi possível concluir: '+error.message);
+ await loadAll();render();toast('Projeto concluído com sucesso');
+}
+function vimakDayClosingData(){
+ const now=new Date(),today=now.toISOString().slice(0,10),same=v=>String(v||'').slice(0,10)===today;
+ const rec=(cache.accountsReceivable||[]).filter(x=>same(x.paid_at||x.received_at||x.updated_at)&&!p360OpenStatus(x));
+ const pay=(cache.accountsPayable||[]).filter(x=>same(x.paid_at||x.updated_at)&&!p360OpenStatus(x));
+ const mounts=(cache.installationSchedule||[]).filter(x=>same(x.ends_at||x.updated_at)&&['Concluído','Finalizado'].includes(dbStatus(x)));
+ const prod=(cache.productionProjects||[]).filter(x=>same(x.updated_at)&&['Concluído','Finalizado','Pronto'].includes(dbStatus(x)));
+ const priorities=vimakPriorityData();
+ return {rec,pay,mounts,prod,priorities,received:p360MoneySum(rec),paid:p360MoneySum(pay)};
+}
+function vimakDayClosingPanel(){
+ const d=vimakDayClosingData(),net=d.received-d.paid;
+ return `<section class="card day-close"><div class="db-panel-head"><div><span>FECHAMENTO DO DIA</span><h3>Resumo operacional de hoje</h3></div><b>${new Date().toLocaleDateString('pt-BR')}</b></div><div class="day-close-kpis"><div><small>Recebido hoje</small><b class="green">${dbMoney(d.received)}</b><span>${d.rec.length} baixa(s)</span></div><div><small>Pago hoje</small><b>${dbMoney(d.paid)}</b><span>${d.pay.length} baixa(s)</span></div><div><small>Saldo do dia</small><b class="${net>=0?'green':'red'}">${dbMoney(net)}</b><span>recebido − pago</span></div><div><small>Produções concluídas</small><b>${d.prod.length}</b><span>hoje</span></div><div><small>Montagens concluídas</small><b>${d.mounts.length}</b><span>hoje</span></div><div><small>Pendências prioritárias</small><b class="${d.priorities.length?'goldtxt':'green'}">${d.priorities.length}</b><span>para acompanhar</span></div></div><div class="day-close-foot"><span>${d.priorities.length?'Existem itens que merecem acompanhamento antes de encerrar o expediente.':'Operação sem pendências prioritárias neste momento.'}</span><button class="btn" onclick="vimakBackup()">⇩ Gerar backup do dia</button></div></section>`;
 }
 
 function p360Select(id){p360ClientId=id;render()}
@@ -458,6 +501,7 @@ function projeto360(){
  ${p360AutomationPanel(id,m)}
  ${p360HealthPanel(id,m)}
  ${p360FinancialPanel(m)}
+ ${p360ClosingPanel(id,m)}
  ${p360Timeline(m)}
  <section class="card p360-flow"><div class="db-panel-head"><div><span>FLUXO DO PROJETO</span><h3>Da venda ao pós-venda</h3></div></div><div class="p360-stage-row">${stages.map((x,i)=>`<button onclick="location.hash='${x[2]}'"><i>${x[1]?'✓':i+1}</i><span>${x[0]}</span><b>${x[1]} registro(s)</b></button>`).join('')}</div></section>
  <div class="p360-grid"><section class="card"><div class="db-panel-head"><div><span>FINANCEIRO DO PROJETO</span><h3>Recebimentos</h3></div><b>${dbMoney(m.receivable)}</b></div><div class="p360-list">${m.ar.slice(0,10).map(x=>`<div><span>${esc(x.description||'Recebimento')}<small>${x.due_date?new Date(x.due_date+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</small></span><b>${dbMoney(x.amount||x.value)}</b><em class="${p360OpenStatus(x)?'goldtxt':'green'}">${esc(x.status||'Aberto')}</em></div>`).join('')||'<div class="empty">Sem contas vinculadas.</div>'}</div></section>
@@ -534,6 +578,8 @@ function dashboard(){
   ${dbToday()}
 
   ${vimakPriorityPanel()}
+
+  ${vimakDayClosingPanel()}
 
   <div class="grid g4 proposal-kpis">
     <div class="card kpi"><label>Pipeline Comercial</label><strong>${dbMoney(pipeline)}</strong><small>${activeLeads.length} oportunidades</small></div>

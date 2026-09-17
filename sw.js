@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-13-11-20-central-inteligente';
+const CACHE = 'vimak-crm-v6-24-13-11-21-fechamento-sistema';
 
 const ASSETS = [
   './',
