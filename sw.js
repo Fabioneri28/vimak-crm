@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-24-13-11-10-label-buttons-fix';
+const CACHE = 'vimak-crm-v6-24-13-11-13-payments-verified';
 
 const ASSETS = [
   './',
