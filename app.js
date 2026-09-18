@@ -2784,7 +2784,27 @@ function refreshModelDraft(){
 function updateModelDraftItem(idx,key,value){
   if(!modelDraftItems[idx])return;
   modelDraftItems[idx][key]=["qty","cost","unit_price"].includes(key)?Number(value||0):value;
-  refreshModelDraft();
+  // Não reconstruir a tabela durante a digitação: isso destruía o input ativo
+  // e fazia o foco sair do campo a cada tecla (mesmo bug corrigido na V6.25.1 da Nova Proposta).
+  const row=document.querySelector(`#modelItemRows tr:nth-child(${idx+1})`);
+  if(row){
+    const totalCell=row.children[6];
+    if(totalCell) totalCell.innerHTML=`<b class="goldtxt">${money(modelItemTotal(modelDraftItems[idx]))}</b>`;
+  }
+  refreshModelSummaryOnly();
+}
+function refreshModelSummaryOnly(){
+  const summary=document.getElementById("modelSummary");
+  if(summary){
+    const m=modelDraftMetrics();
+    summary.innerHTML=`
+      <div><span>Subtotal padrão</span><b>${money(m.subtotal)}</b></div>
+      <div><span>Custo estimado</span><b>${money(m.cost)}</b></div>
+      <div><span>Desconto</span><b>- ${money(m.discount)}</b></div>
+      <div><span>Montagem + frete</span><b>${money(m.assembly+m.freight)}</b></div>
+      <div class="proposal-total-line"><span>VALOR BASE</span><strong>${money(m.total)}</strong></div>
+      <div class="proposal-margin"><span>Margem estimada</span><b class="${m.margin>=0?"green":"red"}">${money(m.margin)} • ${m.marginPct.toFixed(1)}%</b></div>`;
+  }
 }
 function addModelInputItem(){
   const id=document.getElementById("modelInputPick")?.value;
@@ -3535,10 +3555,22 @@ function purchaseDraftTotal(){return purchaseDraftItems.reduce((a,x)=>a+Number(x
 function purchaseRow(x,i){return `<tr>
 <td><select class="table-input" onchange="purchaseDraftItems[${i}].input_id=this.value||null">${`<option value="">Item livre</option>`+cache.inputs.map(z=>`<option value="${z.id}" ${x.input_id===z.id?"selected":""}>${esc(z.name)}</option>`).join("")}</select></td>
 <td><input class="table-input wide" value="${esc(x.description||"")}" oninput="purchaseDraftItems[${i}].description=this.value"></td>
-<td><input class="table-input num" type="number" min="0" step=".01" value="${Number(x.qty||1)}" oninput="purchaseDraftItems[${i}].qty=Number(this.value||0);refreshPurchaseDraft()"></td>
-<td><input class="table-input num" type="number" min="0" step=".01" value="${Number(x.unit_cost||0)}" oninput="purchaseDraftItems[${i}].unit_cost=Number(this.value||0);refreshPurchaseDraft()"></td>
+<td><input class="table-input num" type="number" min="0" step=".01" value="${Number(x.qty||1)}" oninput="purchaseUpdateItem(${i},'qty',this.value)"></td>
+<td><input class="table-input num" type="number" min="0" step=".01" value="${Number(x.unit_cost||0)}" oninput="purchaseUpdateItem(${i},'unit_cost',this.value)"></td>
 <td><b class="goldtxt">${money(Number(x.qty||0)*Number(x.unit_cost||0))}</b></td>
 <td><button class="btn sm danger" onclick="purchaseDraftItems.splice(${i},1);refreshPurchaseDraft()">×</button></td></tr>`}
+function purchaseUpdateItem(i,key,value){
+ if(!purchaseDraftItems[i])return;
+ purchaseDraftItems[i][key]=Number(value||0);
+ // Não reconstruir a tabela durante a digitação: isso destruía o input ativo
+ // e fazia o foco sair do campo a cada tecla (mesmo bug corrigido na V6.25.1 da Nova Proposta).
+ const row=document.querySelector(`#purchaseItemRows tr:nth-child(${i+1})`);
+ if(row){
+   const totalCell=row.children[4];
+   if(totalCell) totalCell.innerHTML=`<b class="goldtxt">${money(Number(purchaseDraftItems[i].qty||0)*Number(purchaseDraftItems[i].unit_cost||0))}</b>`;
+ }
+ const t=document.getElementById("purchaseTotal");if(t)t.textContent=money(purchaseDraftTotal());
+}
 function refreshPurchaseDraft(){
  const b=document.getElementById("purchaseItemRows");if(b)b.innerHTML=purchaseDraftItems.length?purchaseDraftItems.map(purchaseRow).join(""):`<tr><td colspan="6" class="empty">Adicione insumos ao pedido.</td></tr>`;
  const t=document.getElementById("purchaseTotal");if(t)t.textContent=money(purchaseDraftTotal());
@@ -4665,7 +4697,7 @@ function agFmtDate(v){return v?new Date(v).toLocaleDateString('pt-BR'):'—'}
 function agStatusClass(v){return ['Concluído','Finalizado'].includes(v)?'ok':v==='Em andamento'?'gold':v==='Confirmado'?'blue':v==='Cancelado'?'bad':v==='Atrasado'?'bad':''}
 function agDuration(x){return Math.max(0,(new Date(x.ends_at)-new Date(x.starts_at))/3600000)}
 function agFiltered(){return cache.installationSchedule.filter(x=>{const q=agendaSearch.toLowerCase(),c=agClient(x.client_id),t=agTeam(x.team_id),m=agMeta(x),okq=!q||[c?.name,t?.name,x.job_address,x.status,m.environment,m.city,m.notes].some(v=>String(v||'').toLowerCase().includes(q)),okt=agendaTeam==='todos'||x.team_id===agendaTeam,oks=agendaStatus==='todos'||x.status===agendaStatus;return okq&&okt&&oks})}
-function agSetView(v){agendaView=v;render()} function agSetSearch(v){agendaSearch=v;render()} function agSetTeam(v){agendaTeam=v;render()} function agSetStatus(v){agendaStatus=v;render()}
+function agSetView(v){agendaView=v;render()} function agSetSearch(v){agendaSearch=v;render()} function agSetTeam(v){agendaTeam=v;render()} function agSetStatusFilter(v){agendaStatus=v;render()}
 function agMove(n){agendaAnchor=agendaView==='mes'?new Date(agendaAnchor.getFullYear(),agendaAnchor.getMonth()+n,1):agAddDays(agendaAnchor,n*(agendaView==='semana'?7:1));render()}
 function agToday(){agendaAnchor=new Date();render()}
 function agConflicts(team_id,start,end,ignore=''){return cache.installationSchedule.filter(x=>x.id!==ignore&&x.team_id===team_id&&!['Cancelado'].includes(x.status)&&new Date(x.starts_at)<new Date(end)&&new Date(x.ends_at)>new Date(start))}
@@ -4717,7 +4749,7 @@ function agTeamLoad(){const teams=cache.installationTeams.filter(x=>x.active!==f
 function agenda(){const now=new Date(),all=cache.installationSchedule,up=all.filter(x=>new Date(x.starts_at)>=agDay(now)&&!['Cancelado','Concluído','Finalizado'].includes(x.status)),today=all.filter(x=>agISODate(new Date(x.starts_at))===agISODate(now)&&!['Cancelado'].includes(x.status)),conflicts=all.reduce((n,x)=>n+agConflicts(x.team_id,x.starts_at,x.ends_at,x.id).length,0)/2,late=all.filter(x=>new Date(x.ends_at)<now&&!['Concluído','Finalizado','Cancelado'].includes(x.status)).length,[a,b]=agRange(),title=agendaView==='mes'?agendaAnchor.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}):agendaView==='dia'?agendaAnchor.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}):`${a.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} — ${b.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}`;return shell('Agenda de Montagem PRO','Torre de controle visual para equipes, clientes, capacidade e execução',`<button class="btn" onclick="teamCapacityBoard()">▦ Equipes</button><button class="btn gold" onclick="addAgenda()">+ Agendar Montagem</button>`,`<div class="ag-command"><div><span class="measurement-version">V6.17 • INSTALLATION CONTROL TOWER</span><h2>Torre de Controle de Montagens</h2><p>Planeje capacidade, elimine conflitos e acompanhe cada instalação do agendamento à entrega.</p></div><div class="ag-live"><i></i><span>OPERAÇÃO</span><b>ONLINE</b></div></div>
 <div class="grid g4 proposal-kpis"><div class="card kpi"><label>Montagens hoje</label><strong>${today.length}</strong></div><div class="card kpi"><label>Próximas montagens</label><strong>${up.length}</strong></div><div class="card kpi"><label>Conflitos detectados</label><strong class="${conflicts?'red':'green'}">${conflicts}</strong></div><div class="card kpi"><label>Atrasos operacionais</label><strong class="${late?'red':'green'}">${late}</strong></div></div>
 <div class="ag-toolbar"><div class="ag-nav"><button onclick="agMove(-1)">‹</button><button onclick="agToday()">Hoje</button><button onclick="agMove(1)">›</button><strong>${title}</strong></div><div class="ag-views">${[['dia','Dia'],['semana','Semana'],['mes','Mês'],['lista','Lista']].map(v=>`<button class="${agendaView===v[0]?'active':''}" onclick="agSetView('${v[0]}')">${v[1]}</button>`).join('')}</div></div>
-<div class="ag-filters"><input value="${esc(agendaSearch)}" placeholder="Cliente, endereço, cidade, ambiente..." oninput="agSetSearch(this.value)"><select onchange="agSetTeam(this.value)"><option value="todos">Todas as equipes</option>${cache.installationTeams.map(t=>`<option value="${t.id}" ${agendaTeam===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select><select onchange="agSetStatus(this.value)"><option value="todos">Todos os status</option>${['Agendado','Confirmado','Em andamento','Concluído','Atrasado','Cancelado'].map(v=>`<option ${agendaStatus===v?'selected':''}>${v}</option>`).join('')}</select></div>
+<div class="ag-filters"><input value="${esc(agendaSearch)}" placeholder="Cliente, endereço, cidade, ambiente..." oninput="agSetSearch(this.value)"><select onchange="agSetTeam(this.value)"><option value="todos">Todas as equipes</option>${cache.installationTeams.map(t=>`<option value="${t.id}" ${agendaTeam===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select><select onchange="agSetStatusFilter(this.value)"><option value="todos">Todos os status</option>${['Agendado','Confirmado','Em andamento','Concluído','Atrasado','Cancelado'].map(v=>`<option ${agendaStatus===v?'selected':''}>${v}</option>`).join('')}</select></div>
 <div class="ag-layout"><main>${agendaView==='semana'?agWeek():agendaView==='mes'?agMonth():agendaView==='dia'?agDayView():agList()}</main><aside><div class="ag-side-head"><b>CAPACIDADE DAS EQUIPES</b><button onclick="teamCapacityBoard()">Abrir mapa</button></div>${agTeamLoad()}<div class="ag-legend"><b>STATUS</b><span><i class="ok"></i> Concluído</span><span><i class="gold"></i> Em andamento</span><span><i class="blue"></i> Confirmado</span><span><i class="bad"></i> Atraso/Cancelado</span></div></aside></div>`)}
 let finTab='cockpit',finSearch='',finPeriod='12m';
 function finNum(v){return Number(v||0)}
@@ -5075,12 +5107,12 @@ async function rentDeletePersonal(id){if(!confirm('Excluir esta despesa pessoal?
 function custosequipe(){
  finIntelEnsure();if(!finIntel.loaded)return finIntelLoading('Custos de Funcionários');
  const tabs=[['painel','Gestão & Custos'],['config','Encargos'],['rescisao','Simulador de Rescisão']];
- return shell('Custos de Funcionários','Folha gerencial, provisões, custo-hora e simulação de desligamento',`<button class="btn gold" onclick="teamAddMember()">+ Integrante</button>`,
+ return shell('Custos de Funcionários','Folha gerencial, provisões, custo-hora e simulação de desligamento',`<button class="btn gold" onclick="teamCostAddMember()">+ Integrante</button>`,
  `<div class="team-command"><div><span>PEOPLE COST CONTROL</span><h2>Custo Real da Equipe</h2><p>CLT, MEI e Freelancer em uma visão gerencial integrada à rentabilidade.</p></div><div><small>CUSTO MENSAL</small><b>${money(teamMonthlyTotal())}</b></div></div><div class="fin-tabs">${tabs.map(x=>`<button class="${teamTab===x[0]?'active':''}" onclick="teamSetTab('${x[0]}')">${x[1]}</button>`).join('')}</div>${teamTab==='painel'?teamPainel():teamTab==='config'?teamConfig():teamRescisao()}`)
 }
 function teamPainel(){const rows=finIntel.team.map(teamCalc),monthly=rows.reduce((a,x)=>a+x.monthly,0),annual=monthly*12,res=rows.reduce((a,x)=>a+x.res,0),avg=rows.length?monthly/rows.length:0;return `<div class="grid g4 proposal-kpis"><div class="card kpi"><label>Total equipe</label><strong>${rows.length}</strong></div><div class="card kpi"><label>Custo mensal</label><strong>${money(monthly)}</strong></div><div class="card kpi"><label>Impacto anual</label><strong>${money(annual)}</strong></div><div class="card kpi"><label>Reserva rescisória mensal</label><strong class="goldtxt">${money(res)}</strong></div></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Nome</th><th>Regime</th><th>Base / contrato</th><th>Benefícios</th><th>Encargos + provisões</th><th>Custo mensal</th><th>Custo hora</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.name)}</b><small>${x.admission_date?new Date(x.admission_date+'T12:00').toLocaleDateString('pt-BR'):'—'}</small></td><td>${esc(x.contract_type)}</td><td>${money(x.base_salary)}</td><td>${money(n(x.transport_cost)+n(x.benefits_cost))}</td><td>${money(x.vac+x.th+x.inss+x.fgts+x.other+x.res)}</td><td><b>${money(x.monthly)}</b></td><td>${money(x.hour)}</td><td><div class="row-actions"><button class="btn sm" onclick="teamEditMember('${x.id}')">Editar</button><button class="btn sm danger" onclick="teamDeleteMember('${x.id}')">Excluir</button></div></td></tr>`).join('')||'<tr><td colspan="8" class="empty">Nenhum integrante cadastrado.</td></tr>'}</tbody></table></div></div>`}
 function teamMemberForm(x={}){return `<div class="form-grid"><div class="field full"><label>Nome completo / Razão social</label><input id="tmName" value="${esc(x.name||'')}"></div><div class="field"><label>Regime</label><select id="tmType">${['CLT','MEI','Freelancer (Autônomo)'].map(v=>`<option ${x.contract_type===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label>Admissão / início</label><input id="tmDate" type="date" value="${x.admission_date||new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Salário base / contrato mensal</label><input id="tmBase" type="number" step=".01" value="${n(x.base_salary)||2500}"></div><div class="field"><label>Vale transporte / ajuda</label><input id="tmTransport" type="number" step=".01" value="${n(x.transport_cost)}"></div><div class="field"><label>Benefícios / extras</label><input id="tmBenefits" type="number" step=".01" value="${n(x.benefits_cost)}"></div></div>`}
-function teamAddMember(){openModal('Adicionar integrante',teamMemberForm(),`teamSaveMember()`)}
+function teamCostAddMember(){openModal('Adicionar integrante',teamMemberForm(),`teamSaveMember()`)}
 function teamEditMember(id){const x=finIntel.team.find(v=>v.id===id);if(x)openModal('Editar integrante',teamMemberForm(x),`teamSaveMember('${id}')`)}
 async function teamSaveMember(id=''){if(!tmName.value.trim())return toast('Informe o nome');const payload={company_id:profile.company_id,name:tmName.value.trim(),contract_type:tmType.value,admission_date:tmDate.value,base_salary:n(tmBase.value),transport_cost:n(tmTransport.value),benefits_cost:n(tmBenefits.value)};const r=id?await sb.from('team_cost_members').update(payload).eq('id',id):await sb.from('team_cost_members').insert(payload);if(r.error)return toast('Erro: '+r.error.message);closeModal();await finIntelLoad(true);render();toast(id?'Integrante atualizado':'Integrante salvo')}
 async function teamDeleteMember(id){if(!confirm('Excluir este integrante do controle de custos?'))return;const {error}=await sb.from('team_cost_members').delete().eq('id',id);if(error)return toast('Erro: '+error.message);await finIntelLoad(true);render()}
