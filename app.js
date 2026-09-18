@@ -517,8 +517,17 @@ function dbToday(){
  const purchaseLate=(cache.purchaseOrders||[]).filter(x=>open(x)&&x.expected_at&&new Date(x.expected_at)<now);
  const mountLate=(cache.installationSchedule||[]).filter(x=>open(x)&&x.ends_at&&new Date(x.ends_at)<now);
  const hot=cache.leads.filter(x=>!['Pós-venda','Perdido','Cancelado'].includes(dbLeadStage(x))&&Number(x.score||0)>=75);
- const items=[['CLIENTES PRIORITÁRIOS',hot.length,'Leads com score ≥ 75','leads'],['RECEBER HOJE',recvToday.length,dbMoney(p360MoneySum(recvToday)),'financeiro'],['VENCIDOS',lateAR.length,dbMoney(p360MoneySum(lateAR)),'financeiro'],['PRODUÇÃO ATRASADA',prodLate.length,'exige atenção','kanban'],['COMPRAS ATRASADAS',purchaseLate.length,'fornecedor / material','compras'],['MONTAGENS HOJE',mounts.length,'agenda operacional','agenda'],['MONTAGENS ATRASADAS',mountLate.length,'execução pendente','agenda'],['PRÓXIMOS 30 DIAS',dbMoney(next30),'previsto a receber','financeiro']];
- return `<section class="card db-today"><div class="db-panel-head"><div><span>CENTRAL DE PENDÊNCIAS</span><h3>Hoje na VIMAK</h3></div><b>${new Date().toLocaleDateString('pt-BR')}</b></div><div class="db-today-grid">${items.map(x=>`<button onclick="location.hash='${x[3]}'"><small>${x[0]}</small><b>${x[1]}</b><span>${x[2]}</span><strong>ABRIR ›</strong></button>`).join('')}</div></section>`
+ const items=[
+  ['CLIENTES PRIORITÁRIOS',hot.length,'Leads com score ≥ 75','leads',hot.length?'attention':'ok'],
+  ['RECEBER HOJE',recvToday.length,dbMoney(p360MoneySum(recvToday)),'financeiro',recvToday.length?'attention':'ok'],
+  ['VENCIDOS',lateAR.length,dbMoney(p360MoneySum(lateAR)),'financeiro',lateAR.length?'critical':'ok'],
+  ['PRODUÇÃO ATRASADA',prodLate.length,'exige atenção','kanban',prodLate.length?'critical':'ok'],
+  ['COMPRAS ATRASADAS',purchaseLate.length,'fornecedor / material','compras',purchaseLate.length?'critical':'ok'],
+  ['MONTAGENS HOJE',mounts.length,'agenda operacional','agenda',mounts.length?'attention':'ok'],
+  ['MONTAGENS ATRASADAS',mountLate.length,'execução pendente','agenda',mountLate.length?'critical':'ok'],
+  ['PRÓXIMOS 30 DIAS',dbMoney(next30),'previsto a receber','financeiro','info']
+ ];
+ return `<section class="card db-today"><div class="db-panel-head"><div><span>CENTRAL DE PENDÊNCIAS</span><h3>Hoje na VIMAK</h3></div><b>${new Date().toLocaleDateString('pt-BR')}</b></div><div class="db-today-grid">${items.map(x=>`<button class="lvl-${x[4]}" onclick="location.hash='${x[3]}'"><small>${x[0]}</small><b>${x[1]}</b><span>${x[2]}</span><strong>ABRIR ›</strong></button>`).join('')}</div></section>`
 }
 
 
@@ -566,27 +575,35 @@ function dashboard(){
   const forecast=activeLeads.reduce((a,x)=>a+dbLeadValue(x)*dbLeadProb(x)/100,0);
   const receber=cache.accountsReceivable.filter(x=>!['Pago','Recebido','Baixado','Liquidado'].includes(dbStatus(x))).reduce((a,x)=>a+dbNum(x.amount||x.value),0);
   const pagar=cache.accountsPayable.filter(x=>!['Pago','Baixado','Liquidado'].includes(dbStatus(x))).reduce((a,x)=>a+dbNum(x.amount||x.value),0);
-  const ops=dbOps(),alerts=dbAlerts();
+  const ops=dbOps(),alerts=dbAlerts(),realAlerts=alerts.filter(a=>a[2]!=='dashboard');
   const proposals=cache.proposals||[];
-  const approved=proposals.filter(x=>['Aprovado','Fechado','Produção','Finalizado'].includes(dbStatus(x))).length;
+  const approvedList=proposals.filter(x=>['Aprovado','Fechado','Produção','Finalizado'].includes(dbStatus(x)));
+  const approved=approvedList.length;
   const conv=proposals.length?approved/proposals.length*100:0;
+  const avgTicket=approved?approvedList.reduce((a,x)=>a+dbNum(x.total||x.final_value||x.value),0)/approved:0;
+  const healthy=receber+forecast-pagar>=0;
 
   return shell('Dashboard Executivo 360°','CEO Command Center • comercial, operação, produção, montagem e financeiro',
   `<button class="btn" onclick="vimakBackup()">⇩ Backup</button><button class="btn" onclick="location.hash='propostas'">▤ Propostas</button><button class="btn gold" onclick="location.hash='financeiro'">◈ Financeiro</button>`,
-  `<div class="db-command"><div><span class="measurement-version">V6.21 • CEO COMMAND CENTER</span><h2>VIMAK Executive Intelligence</h2><p>Uma visão única do negócio: vendas, execução, caixa, produtividade e riscos.</p></div><div class="db-health"><span>BUSINESS HEALTH</span><b class="${receber+forecast-pagar>=0?'green':'red'}">${receber+forecast-pagar>=0?'SAUDÁVEL':'ATENÇÃO'}</b></div></div>
+  `<div class="db-command">
+    <div><span class="measurement-version">CEO COMMAND CENTER</span><h2>VIMAK Executive Intelligence</h2><p>Uma visão única do negócio: vendas, execução, caixa, produtividade e riscos.</p></div>
+    <div class="db-command-side">
+      ${realAlerts.length?`<button class="db-alert-pill" onclick="location.hash='${realAlerts[0][2]}'"><b>${realAlerts.length}</b><span>ponto${realAlerts.length>1?'s':''} de atenção</span></button>`:'<div class="db-alert-pill ok"><b>✓</b><span>tudo em dia</span></div>'}
+      <div class="db-health"><span>BUSINESS HEALTH</span><b class="${healthy?'green':'red'}">${healthy?'SAUDÁVEL':'ATENÇÃO'}</b></div>
+    </div>
+  </div>
 
-  ${dbToday()}
+  <div class="db-stack">
 
-  ${vimakPriorityPanel()}
-
-  ${vimakDayClosingPanel()}
-
-  <div class="grid g4 proposal-kpis">
+  <div class="grid g5 proposal-kpis">
     <div class="card kpi"><label>Pipeline Comercial</label><strong>${dbMoney(pipeline)}</strong><small>${activeLeads.length} oportunidades</small></div>
     <div class="card kpi"><label>Forecast Ponderado</label><strong class="goldtxt">${dbMoney(forecast)}</strong><small>${conv.toFixed(1)}% aprovação propostas</small></div>
+    <div class="card kpi"><label>Ticket Médio</label><strong>${dbMoney(avgTicket)}</strong><small>${approved} proposta(s) aprovada(s)</small></div>
     <div class="card kpi"><label>Contas a Receber</label><strong class="green">${dbMoney(receber)}</strong><small>saldo em aberto</small></div>
     <div class="card kpi"><label>Contas a Pagar</label><strong>${dbMoney(pagar)}</strong><small>saldo em aberto</small></div>
   </div>
+
+  ${vimakPriorityPanel()}
 
   <div class="db-grid-main">
     <section class="card">
@@ -594,21 +611,24 @@ function dashboard(){
       ${dbChart()}
     </section>
     <section class="card">
-      <div class="db-panel-head"><div><span>CONTROL ROOM</span><h3>Alertas Executivos</h3></div><b>${alerts.length}</b></div>
-      <div class="db-alerts">${alerts.map(a=>`<button onclick="location.hash='${a[2]}'"><b>${a[0]}</b><span>${a[1]}</span><strong>›</strong></button>`).join('')}</div>
+      <div class="db-panel-head"><div><span>OPERAÇÃO</span><h3>Tempo Real</h3></div></div>
+      <div class="db-op-grid">
+        <div><span>Em produção</span><b>${ops.producao}</b></div>
+        <div><span>Atrasados</span><b class="${ops.atrasados?'red':''}">${ops.atrasados}</b></div>
+        <div><span>Montagens hoje</span><b>${ops.montagensHoje}</b></div>
+        <div><span>Compras abertas</span><b>${ops.comprasAbertas}</b></div>
+      </div>
     </section>
   </div>
 
+  ${dbToday()}
+
   <div class="db-row3">
     <section class="card"><div class="db-panel-head"><div><span>SALES FUNNEL</span><h3>Funil Comercial</h3></div></div>${dbFunnel()}</section>
-    <section class="card"><div class="db-panel-head"><div><span>OPERATIONS</span><h3>Operação em Tempo Real</h3></div></div><div class="db-op-grid">
-      <div><span>Em produção</span><b>${ops.producao}</b></div>
-      <div><span>Atrasados</span><b class="${ops.atrasados?'red':''}">${ops.atrasados}</b></div>
-      <div><span>Montagens hoje</span><b>${ops.montagensHoje}</b></div>
-      <div><span>Compras abertas</span><b>${ops.comprasAbertas}</b></div>
-    </div></section>
     <section class="card"><div class="db-panel-head"><div><span>TOP OPPORTUNITIES</span><h3>Maiores Propostas</h3></div></div><div class="db-ranking">${dbRanking()}</div></section>
   </div>
+
+  ${vimakDayClosingPanel()}
 
   <div class="db-strip">
     <button onclick="location.hash='leads'"><span>LEADS</span><b>${cache.leads.length}</b><small>base comercial</small></button>
@@ -616,6 +636,8 @@ function dashboard(){
     <button onclick="location.hash='kanban'"><span>PRODUÇÃO</span><b>${ops.producao}</b><small>em andamento</small></button>
     <button onclick="location.hash='agenda'"><span>MONTAGEM</span><b>${ops.montagensHoje}</b><small>hoje</small></button>
     <button onclick="location.hash='financeiro'"><span>POSIÇÃO ABERTA</span><b>${dbMoney(receber-pagar)}</b><small>receber − pagar</small></button>
+  </div>
+
   </div>`)
 }
 function leads(){
