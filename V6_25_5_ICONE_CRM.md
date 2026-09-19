@@ -1,0 +1,1 @@
+Ícone próprio VIMAK CRM para iPhone, Android e PWA. Sem alteração de banco, login ou regras do CRM.

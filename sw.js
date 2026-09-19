@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-25-4-taxas-restauradas';
+const CACHE = 'vimak-crm-v6-25-5-icone-crm';
 
 const ASSETS = [
   './',
@@ -7,6 +7,10 @@ const ASSETS = [
   './app.js',
   './config.js',
   './manifest.webmanifest',
+  './assets/crm-icon-180.png',
+  './assets/crm-icon-192.png',
+  './assets/crm-icon-512.png',
+  './assets/favicon-32.png',
   './notifications-v62420.js',
   './captura.html',
   './captura.css',
