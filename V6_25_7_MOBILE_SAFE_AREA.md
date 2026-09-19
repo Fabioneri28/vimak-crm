@@ -1,0 +1,1 @@
+Correção mobile/iPhone: barra superior e menu lateral respeitam a área segura do iOS (relógio/notch/Dynamic Island), navegação lateral rolável e conteúdo sem sobreposição. Sem alterações em banco, login ou módulos.
