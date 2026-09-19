@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-25-5-icone-crm';
+const CACHE = 'vimak-crm-v6-25-6-iphone-icon';
 
 const ASSETS = [
   './',
@@ -7,6 +7,10 @@ const ASSETS = [
   './app.js',
   './config.js',
   './manifest.webmanifest',
+  './apple-touch-icon.png',
+  './apple-touch-icon-precomposed.png',
+  './icon-192.png',
+  './icon-512.png',
   './assets/crm-icon-180.png',
   './assets/crm-icon-192.png',
   './assets/crm-icon-512.png',

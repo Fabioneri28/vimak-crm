@@ -1,0 +1,1 @@
+V6.25.6 — correção do ícone do VIMAK CRM no iPhone. Apple Touch Icon também publicado na raiz, sem query string, com fallback precomposed e ícones PWA na raiz. Sem alterações funcionais no CRM.
