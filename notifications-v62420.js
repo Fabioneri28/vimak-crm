@@ -175,7 +175,9 @@ setInterval(()=>{
 // V6.24.13.11.20 • alertas operacionais calculados do cache, sem nova tabela/SQL
 function vimakOperationalNotifications(){
  if(typeof vimakPriorityData!=='function')return [];
- return vimakPriorityData().map((x,i)=>({id:'op-'+i,type:'operational',severity:x.level==='critical'?'hot':'attention',title:`${x.tag} • ${x.title}`,message:`${x.sub||''}${x.value?' • '+x.value:''}`,created_at:new Date().toISOString(),read_at:null,hash:x.hash,_operational:true}));
+ const base=vimakPriorityData().map((x,i)=>({id:'op-'+i,type:'operational',severity:x.level==='critical'?'hot':'attention',title:`${x.tag} • ${x.title}`,message:`${x.sub||''}${x.value?' • '+x.value:''}`,created_at:new Date().toISOString(),read_at:null,hash:x.hash,_operational:true}));
+ const pay=(cache.accountsPayable||[]).filter(x=>finOpenStatus(x.status)&&x.due_date).filter(x=>{const d=finDays(x.due_date);return d<0||[0,1,3,7].includes(d)}).map((x,i)=>{const d=finDays(x.due_date),when=d<0?`${Math.abs(d)} dia(s) vencida`:d===0?'vence hoje':`vence em ${d} dia(s)`;return{id:'cal-'+x.id,type:'operational',severity:d<=0?'hot':'attention',title:`CONTA • ${x.description||'Pagamento'}`,message:`${when} • ${money(x.amount||x.value)}`,created_at:new Date().toISOString(),read_at:null,hash:'financeiro',_operational:true}});
+ return [...pay,...base];
 }
 function vimakAllNotifications(){return [...vimakOperationalNotifications(),...vimakNotifState.rows]}
 function updateNotificationBadge(){
