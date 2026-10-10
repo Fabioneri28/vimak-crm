@@ -320,3 +320,7 @@ Construída diretamente sobre a V6.21 enviada e confirmada como funcional.
 - Forma de pagamento, parcelas, origem e observações gravadas no metadata de `finance_transactions`.
 - Lançamentos rápidos passam a compor a DRE/visão gerencial sem alterar o núcleo de autenticação.
 - Nenhuma migration nova.
+
+
+## V6.25.9 — Temas
+Botão de aparência ao lado da pesquisa/notificações: Escuro, Claro e Colorido. Preferência persistida localmente por usuário/navegador. Não altera banco de dados nem módulos do CRM.

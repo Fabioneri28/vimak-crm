@@ -1,0 +1,1 @@
+Correção da Central: botão de leads desativado quando não há leads não lidos; após marcar como lidos, recarrega Supabase e atualiza contadores. Alertas operacionais não são apagados por este botão. Nenhum SQL necessário.

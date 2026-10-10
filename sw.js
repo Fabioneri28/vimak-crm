@@ -1,4 +1,4 @@
-const CACHE = 'vimak-crm-v6-25-8-calendario-financeiro';
+const CACHE = 'vimak-crm-v6-25-9-3-kanban-concluido';
 
 const ASSETS = [
   './',

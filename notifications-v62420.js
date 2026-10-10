@@ -66,16 +66,27 @@ async function markNotificationRead(id,openLead=false){
 
 async function markAllNotificationsRead(){
   if(!profile?.company_id)return;
+  const unread=vimakNotifUnread();
+  if(!unread){toast("Não há notificações de leads pendentes");return}
   const now=new Date().toISOString();
   const {error}=await sb.from("crm_notifications")
     .update({read_at:now})
     .eq("company_id",profile.company_id)
     .is("read_at",null);
-  if(error)return toast("Erro: "+error.message);
-  vimakNotifState.rows.forEach(x=>x.read_at=x.read_at||now);
+  if(error){toast("Não foi possível marcar como lidas: "+error.message);return}
+  await loadCrmNotifications();
   updateNotificationBadge();
-  renderNotificationList();
-  toast("Notificações marcadas como lidas")
+  if(document.getElementById("notificationList")){
+    const ops=vimakOperationalNotifications().length,leads=vimakNotifUnread();
+    const heading=document.getElementById("notifCenterHeading");
+    const summary=document.getElementById("notifCenterSummary");
+    const btn=document.getElementById("notifMarkLeadsRead");
+    if(heading)heading.textContent=`${ops+leads} alerta(s) ativo(s)`;
+    if(summary)summary.textContent=`${ops} operacional(is) • ${leads} lead(s) não lido(s). Alertas operacionais permanecem até resolver a pendência.`;
+    if(btn)btn.disabled=leads===0;
+    renderNotificationList();
+  }
+  toast("Notificações de leads marcadas como lidas");
 }
 
 function renderNotificationList(){
@@ -191,5 +202,5 @@ function renderNotificationList(){
 }
 function openNotificationCenter(){
  const ops=vimakOperationalNotifications().length,leads=vimakNotifUnread();
- openModal('Central de Notificações',`<div class="notif-center"><div class="notif-head"><div><span>CENTRAL UNIFICADA</span><h3>${ops+leads} alerta(s) ativo(s)</h3><p>${ops} operacional(is) • ${leads} lead(s) não lido(s). Alertas operacionais desaparecem automaticamente quando a pendência é resolvida.</p></div><button class="btn" onclick="markAllNotificationsRead()">Ler notificações de leads</button></div><div id="notificationList" class="notif-list"></div></div>`,'');renderNotificationList()
+ openModal('Central de Notificações',`<div class="notif-center"><div class="notif-head"><div><span>CENTRAL UNIFICADA</span><h3 id="notifCenterHeading">${ops+leads} alerta(s) ativo(s)</h3><p id="notifCenterSummary">${ops} operacional(is) • ${leads} lead(s) não lido(s). Alertas operacionais permanecem até resolver a pendência.</p></div><button id="notifMarkLeadsRead" class="btn" onclick="markAllNotificationsRead()" ${leads===0?'disabled title="Nenhum lead não lido"':''}>Marcar leads como lidos</button></div><div id="notificationList" class="notif-list"></div></div>`,'');renderNotificationList()
 }

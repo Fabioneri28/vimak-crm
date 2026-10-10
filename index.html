@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="VIMAK CRM">
-  <link rel="stylesheet" href="styles.css?v=6.25.8">
+  <link rel="stylesheet" href="styles.css?v=6.25.9.2">
 </head>
 <body>
 
@@ -36,7 +36,7 @@
   <div class="auth-panel">
     <div class="login-card">
       <div class="mobile-brand"><div class="brand-icon"><img src="assets/crm-icon-192.png" alt="VIMAK CRM"></div><b>VIMAK CRM</b></div>
-      <span class="v4-pill">V6.25.8 • FINANCEIRO</span>
+      <span class="v4-pill">V6.25.9.2 • TEMAS</span>
       <h2>Bem-vindo de volta</h2>
       <p class="muted">Entre para acessar o ambiente da sua empresa.</p>
       <form id="loginForm" onsubmit="login(event)">
@@ -77,8 +77,17 @@
       <button class="menu" onclick="toggleMenu()">☰</button>
       <div class="crumb"><span id="topCompany">VIMAK Planejados</span><i>/</i><b id="crumb">Dashboard</b></div>
       <div class="global-search"><input id="globalSearchInput" placeholder="Buscar cliente, proposta, projeto, OS..." oninput="vimakGlobalSearchInput(this.value)" onfocus="vimakGlobalSearchInput(this.value)"><div id="globalSearchResults" class="global-search-results"></div></div><div class="top-actions">
+        <div class="theme-picker">
+          <button id="themeButton" class="icon-btn theme-btn" title="Alterar aparência">◐</button>
+          <div id="themeMenu" class="theme-menu" hidden>
+            <div class="theme-title">APARÊNCIA</div>
+            <button onclick="setCRMTheme('dark')"><span class="theme-dot dark-dot"></span><div><b>Escuro</b><small>Preto e dourado VIMAK</small></div><i id="themeCheckDark">✓</i></button>
+            <button onclick="setCRMTheme('light')"><span class="theme-dot light-dot"></span><div><b>Claro</b><small>Limpo e profissional</small></div><i id="themeCheckLight">✓</i></button>
+            <button onclick="setCRMTheme('color')"><span class="theme-dot color-dot"></span><div><b>Colorido</b><small>Mais contraste nos módulos</small></div><i id="themeCheckColor">✓</i></button>
+          </div>
+        </div>
         <button id="notificationBell" class="icon-btn" title="Notificações" onclick="openNotificationCenter()">◇<i id="notificationDot" class="notif-dot"></i><span id="notificationCount" class="notif-count" hidden>0</span></button>
-        <div class="v4-badge">V6.25.8 • FINANCEIRO</div>
+        <div class="v4-badge">V6.25.9.2 • TEMAS</div>
       </div>
     </header>
     <section id="content" class="content"></section>
@@ -97,7 +106,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}</script>
 <script src="app.js?v=6.25.0"></script>
-<script src="notifications-v62420.js?v=6.25.8"></script>
+<script src="notifications-v62420.js?v=6.25.9.4"></script>
 <link rel="stylesheet" href="modules/maquininhas-v6241.css?v=6.24.13.11.16">
 <script src="modules/module-registry.js"></script>
 <script src="modules/maquininhas-v6241.js?v=6.25.4"></script>
@@ -105,6 +114,40 @@
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("./sw.js").catch(()=>{});
 }
+
+/* V6.25.9 — tema persistente por usuário/navegador */
+function crmThemeKey(){
+  try{
+    const u=(typeof currentUser!=="undefined"&&currentUser)?currentUser:null;
+    return "vimak_crm_theme_"+(u?.id||u?.email||"default");
+  }catch(e){return "vimak_crm_theme_default"}
+}
+function updateThemeChecks(theme){["Dark","Light","Color"].forEach(x=>{const el=document.getElementById("themeCheck"+x);if(el)el.style.visibility=(theme===x.toLowerCase()?"visible":"hidden")})}
+function setCRMTheme(theme){if(!["dark","light","color"].includes(theme))theme="dark";document.documentElement.setAttribute("data-crm-theme",theme);try{localStorage.setItem(crmThemeKey(),theme)}catch(e){}updateThemeChecks(theme);const m=document.getElementById("themeMenu");if(m)m.hidden=true}
+function toggleThemeMenu(){const m=document.getElementById("themeMenu");if(!m)return;m.hidden=!m.hidden;if(!m.hidden)updateThemeChecks(document.documentElement.getAttribute("data-crm-theme")||"dark")}
+(function initCRMTheme(){
+  function applySavedTheme(){
+    let theme="dark";
+    try{theme=localStorage.getItem(crmThemeKey())||localStorage.getItem("vimak_crm_theme_default")||"dark"}catch(e){}
+    document.documentElement.setAttribute("data-crm-theme",theme);
+    updateThemeChecks(theme);
+  }
+  function bindThemeUI(){
+    const btn=document.getElementById("themeButton"), menu=document.getElementById("themeMenu");
+    if(!btn||!menu)return;
+    btn.onclick=function(e){
+      e.preventDefault();e.stopPropagation();
+      menu.hidden=!menu.hidden;
+      if(!menu.hidden) updateThemeChecks(document.documentElement.getAttribute("data-crm-theme")||"dark");
+    };
+    menu.querySelectorAll("button").forEach(b=>b.addEventListener("click",e=>e.stopPropagation()));
+    document.addEventListener("click",e=>{if(!menu.hidden&&!e.target.closest(".theme-picker"))menu.hidden=true});
+  }
+  applySavedTheme();
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bindThemeUI);
+  else bindThemeUI();
+})();
+
 </script>
 </body>
 </html>
