@@ -513,7 +513,8 @@ function dbToday(){
  const recvToday=cache.accountsReceivable.filter(x=>open(x)&&String(x.due_date||'').slice(0,10)===today),lateAR=cache.accountsReceivable.filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now);
  const next30=cache.accountsReceivable.filter(x=>open(x)&&x.due_date&&new Date(x.due_date)>=now&&new Date(x.due_date)<=in30).reduce((a,x)=>a+dbNum(x.amount||x.value),0);
  const mounts=cache.installationSchedule.filter(x=>String(x.starts_at||'').slice(0,10)===today&&!['Cancelado'].includes(dbStatus(x)));
- const prodLate=(cache.productionProjects||[]).filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now);
+ const productionStillOpen=x=>!['Entregue','Concluído','Concluido','Finalizado','Pronto','Cancelado','Entregue ao cliente'].includes(String(dbStatus(x)||'').trim());
+ const prodLate=(cache.productionProjects||[]).filter(x=>productionStillOpen(x)&&open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now);
  const purchaseLate=(cache.purchaseOrders||[]).filter(x=>open(x)&&x.expected_at&&new Date(x.expected_at)<now);
  const mountLate=(cache.installationSchedule||[]).filter(x=>open(x)&&x.ends_at&&new Date(x.ends_at)<now);
  const hot=cache.leads.filter(x=>!['Pós-venda','Perdido','Cancelado'].includes(dbLeadStage(x))&&Number(x.score||0)>=75);
@@ -558,7 +559,7 @@ function vimakPriorityData(){
  let out=[];
  (cache.accountsReceivable||[]).filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now).forEach(x=>out.push({w:100,level:'critical',tag:'VENCIDO',title:x.description||'Conta a receber vencida',sub:`${p360ClientName(p360FindClientId(x))} • ${x.due_date?new Date(x.due_date+'T12:00:00').toLocaleDateString('pt-BR'):''}`,value:dbMoney(x.amount||x.value),hash:'financeiro'}));
  (cache.accountsPayable||[]).filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now).forEach(x=>out.push({w:95,level:'critical',tag:'PAGAR',title:x.description||'Conta a pagar vencida',sub:x.supplier_name||'Financeiro',value:dbMoney(x.amount||x.value),hash:'financeiro'}));
- (cache.productionProjects||[]).filter(x=>open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now).forEach(x=>out.push({w:90,level:'critical',tag:'PRODUÇÃO',title:x.title||x.name||'Produção atrasada',sub:p360ClientName(p360FindClientId(x)),value:'ABRIR',hash:'kanban'}));
+ (cache.productionProjects||[]).filter(x=>!['Entregue','Concluído','Concluido','Finalizado','Pronto','Cancelado','Entregue ao cliente'].includes(String(dbStatus(x)||'').trim())&&open(x)&&x.due_date&&new Date(x.due_date+'T23:59:59')<now).forEach(x=>out.push({w:90,level:'critical',tag:'PRODUÇÃO',title:x.title||x.name||'Produção atrasada',sub:p360ClientName(p360FindClientId(x)),value:'ABRIR',hash:'kanban'}));
  (cache.purchaseOrders||[]).filter(x=>open(x)&&x.expected_at&&new Date(x.expected_at)<now).forEach(x=>out.push({w:85,level:'attention',tag:'COMPRA',title:x.number||x.supplier_name||'Compra atrasada',sub:x.supplier_name||'Material pendente',value:'ABRIR',hash:'compras'}));
  (cache.installationSchedule||[]).filter(x=>open(x)&&x.starts_at&&new Date(x.starts_at)<=soon&&new Date(x.starts_at)>=now).forEach(x=>out.push({w:75,level:'attention',tag:'MONTAGEM',title:'Montagem próxima',sub:`${p360ClientName(p360FindClientId(x))} • ${new Date(x.starts_at).toLocaleDateString('pt-BR')}`,value:'AGENDA',hash:'agenda'}));
  (cache.accountsReceivable||[]).filter(x=>open(x)&&x.due_date&&String(x.due_date).slice(0,10)===today).forEach(x=>out.push({w:80,level:'attention',tag:'RECEBER',title:x.description||'Recebimento de hoje',sub:p360ClientName(p360FindClientId(x)),value:dbMoney(x.amount||x.value),hash:'financeiro'}));
